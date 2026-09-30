@@ -5,3 +5,4 @@ dist
 *.tsbuildinfo
 .DS_Store
 supabase/.temp
+e2e/screenshots

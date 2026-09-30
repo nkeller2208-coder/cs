@@ -90,9 +90,11 @@ begin
     return null;
   end if;
 
+  -- ON CONFLICT : deux appels simultanés à la première connexion ne doivent pas échouer.
   insert into public.members (id, email, display_name, avatar_url, role)
   values (u.id, v_email, coalesce(v_name, ''), u.raw_user_meta_data ->> 'avatar_url', entry.role)
-  returning * into m;
+  on conflict (id) do nothing;
+  select * into m from public.members where id = u.id;
 
   insert into public.member_prefs (member_id) values (u.id) on conflict do nothing;
   return m;

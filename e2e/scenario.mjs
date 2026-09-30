@@ -1,0 +1,192 @@
+// Scénario de bout en bout : login, formulaire, filtres, détail, admin, import, mobile.
+// Lancé par e2e/run.sh (base neuve à chaque exécution).
+import { mkdirSync } from 'node:fs'
+import { chromium } from 'playwright'
+import { sign } from './jwt.mjs'
+
+const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
+const SHOTS = process.env.SHOTS ?? 'e2e/screenshots'
+mkdirSync(SHOTS, { recursive: true })
+const users = {
+  admin: { id: '11111111-1111-1111-1111-111111111111', email: 'admin@team.gg' },
+  member: { id: '22222222-2222-2222-2222-222222222222', email: 'membre@team.gg' },
+  intrus: { id: '33333333-3333-3333-3333-333333333333', email: 'intrus@x.gg' },
+}
+function session(u) {
+  const exp = Math.floor(Date.now() / 1000) + 3600 * 24
+  const access_token = sign({ sub: u.id, role: 'authenticated', email: u.email, aud: 'authenticated', exp })
+  return { access_token, refresh_token: 'x', expires_at: exp, expires_in: 86400, token_type: 'bearer',
+    user: { id: u.id, email: u.email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01' } }
+}
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
+const errors = []
+async function ctxFor(user, viewport = { width: 1440, height: 900 }) {
+  const ctx = await browser.newContext({ viewport })
+  if (user) await ctx.addInitScript((s) => { if (location.port === '5173') localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s)) }, session(user))
+  const page = await ctx.newPage()
+  current = page
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+  page.on('console', (m) => m.type() === 'error' && !/youtube|noembed|ytimg|imgur|Failed to load resource/.test(m.text()) && errors.push(`console: ${m.text()}`))
+  return page
+}
+const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false })
+const step = (s) => console.log('✓', s)
+let current
+process.on('uncaughtException', async (e) => { console.log('FAIL', e.message.split('\n')[0]); try { await current?.screenshot({ path: `${SHOTS}/fail.png`, fullPage: true }) } catch {} ; console.log(errors.join('\n')); process.exit(1) })
+
+// 1. anonyme
+let page = await ctxFor(null)
+await page.goto(BASE + '/c/1')
+await page.getByText('Continuer avec Discord').waitFor()
+await shot(page, '01-login'); step('login affiché sans session')
+
+// 2. intrus
+page = await ctxFor(users.intrus)
+await page.goto(BASE)
+await page.getByText('Accès non autorisé').waitFor(); step('intrus refusé')
+
+// 3. admin : formulaire
+page = await ctxFor(users.admin)
+await page.goto(BASE)
+await page.getByText('La base est vide').waitFor(); step('admin connecté, base vide')
+await page.keyboard.press('n')
+await page.getByText('Nouvelle carte').waitFor(); step('touche N ouvre le formulaire')
+// validation
+await page.getByRole('button', { name: 'Publier' }).click()
+await page.getByText('Choisis une map.').waitFor()
+await page.getByText('Le titre est obligatoire.').waitFor(); step('erreurs de validation en ligne')
+const link = page.getByLabel('Lien média')
+await link.fill('https://youtu.be/dQw4w9WgXcQ?t=75')
+await link.press('Enter')
+await page.locator('input[placeholder="mm:ss"]').waitFor()
+const start = await page.locator('input[placeholder="mm:ss"]').inputValue()
+if (start !== '1:15') throw new Error('timestamp attendu 1:15, reçu ' + start)
+await page.locator('input[placeholder="mm:ss"]').fill('0:42'); step('lien YouTube détecté, début modifiable')
+await page.getByRole('button', { name: 'Mirage', exact: true }).click()
+await page.getByRole('button', { name: 'CT', exact: true }).click()
+await page.getByRole('button', { name: 'Pivot B', exact: true }).click()
+await page.getByLabel('Chercher une zone').fill('Palace')
+await page.getByLabel('Chercher une zone').press('Enter')
+await page.getByLabel('Chercher une zone').fill('Chaise rouge')
+await page.getByRole('button', { name: /Nouvelle zone « Chaise rouge »/ }).click()
+await page.getByText(/créée \(à valider/).waitFor(); step('zone proposée depuis le formulaire')
+if (await page.getByText("7. Type d'utilitaire").count()) throw new Error('utilitaire visible sans Stuff')
+await page.getByRole('button', { name: 'Stuff', exact: true }).click()
+await page.getByText("7. Type d'utilitaire").waitFor(); step('utilitaire apparaît avec Stuff')
+await page.getByRole('button', { name: 'Smoke', exact: true }).click()
+await page.getByRole('button', { name: 'Passif', exact: true }).click()
+await page.getByRole('button', { name: 'Full buy', exact: true }).click()
+await page.locator('#title').fill('Smoke Palace depuis CT')
+await page.locator('#description').fill('**Jumpthrow** en visant l’antenne.\n- rapide\n- sûr')
+await page.waitForTimeout(3000)
+await page.getByText(/Brouillon enregistré à/).waitFor(); step('autosave serveur en brouillon')
+await shot(page, '02-form')
+await page.getByRole('button', { name: /Enregistrer et en créer une autre/ }).click()
+await page.getByText('Carte publiée').waitFor()
+await page.waitForTimeout(300)
+const kept = await page.getByRole('button', { name: 'Mirage', exact: true }).getAttribute('aria-pressed')
+const keptRole = await page.getByRole('button', { name: 'Pivot B', exact: true }).getAttribute('aria-pressed')
+const title2 = await page.locator('#title').inputValue()
+if (kept !== 'true' || keptRole !== 'true' || title2 !== '') throw new Error('série : valeurs non conservées')
+step('série : map/side/rôle conservés, reste vidé')
+await page.getByRole('button', { name: 'Position', exact: true }).click()
+await page.locator('#title').fill('Position fenêtre Palace')
+await page.locator('#description').fill('Tenir depuis le coin')
+await page.getByRole('button', { name: 'Publier' }).click()
+await page.waitForURL(/\/\?map=|\/$/)
+step('publication → retour liste : ' + page.url())
+
+// 4. filtres
+await page.goto(BASE)
+await page.getByText('2 cartes').waitFor()
+await page.getByRole('button', { name: /^Mirage\s*2$/ }).click()
+await page.getByRole('button', { name: /^CT\s*2$/ }).first().click()
+await page.getByRole('button', { name: /^Stuff\s*1$/ }).click()
+await page.getByText('1 carte', { exact: true }).waitFor()
+if (!/map=\d+&side=CT&cat=\d+/.test(page.url())) throw new Error('URL filtres : ' + page.url())
+step('filtres ET/OU + compteurs + URL : ' + page.url())
+await page.getByLabel('Recherche').fill('palace')
+await page.waitForTimeout(400)
+await shot(page, '03-browse')
+await page.getByRole('button', { name: 'Réinitialiser les filtres' }).click()
+await page.getByText('2 cartes').waitFor(); step('réinitialiser')
+await page.getByLabel('Recherche').fill('fenetre')
+await page.getByText('1 carte', { exact: true }).waitFor(); step('recherche sans accents')
+await page.getByLabel('Recherche').fill('')
+
+// 5. détail
+await page.getByRole('link', { name: /Smoke Palace depuis CT/ }).click()
+await page.getByRole('dialog').waitFor()
+if (!/\/c\/\d+$/.test(page.url())) throw new Error('URL détail')
+await page.getByRole('dialog').getByText('Chaise rouge').waitFor()
+await page.getByRole('button', { name: /Historique/ }).click()
+await page.getByText('Carte créée').waitFor(); step('vue détaillée en modale + historique')
+await shot(page, '04-detail')
+const cardUrl = page.url()
+
+// 6. membre : signale « à revoir », ne peut pas modifier
+page = await ctxFor(users.member)
+await page.goto(cardUrl)
+await page.getByRole('heading', { name: 'Smoke Palace depuis CT' }).waitFor()
+if (await page.getByRole('link', { name: /Modifier/ }).count()) throw new Error('membre peut modifier la carte d’autrui')
+await page.getByRole('button', { name: /Signaler/ }).click()
+await page.getByPlaceholder(/la smoke ne passe plus/).fill('Ne passe plus depuis la MAJ')
+await page.getByRole('button', { name: 'Signaler', exact: true }).click()
+await page.getByText('Ne passe plus depuis la MAJ').waitFor(); step('URL partageable + membre signale « À revoir »')
+await page.getByRole('button', { name: /Dupliquer/ }).click()
+await page.locator('#title').waitFor()
+if ((await page.locator('#title').inputValue()) !== 'Smoke Palace depuis CT (copie)') throw new Error('dupliquer')
+step('dupliquer pré-remplit le formulaire')
+await page.goto(BASE + '/?view=review')
+await page.getByText('1 carte', { exact: true }).waitFor(); step('filtre « À revoir »')
+
+// 7. admin : zones à valider, fusion
+page = await ctxFor(users.admin)
+await page.goto(BASE + '/admin/zones')
+await page.getByText('Zones proposées à valider (1)').waitFor()
+await shot(page, '05-admin-zones')
+page.once('dialog', (d) => d.accept())
+await page.getByLabel('Fusionner avec').selectOption({ label: 'Palace' })
+await page.getByText('Zones fusionnées').waitFor(); step('fusion de zone (admin)')
+
+// 8. import CSV
+await page.goto(BASE + '/import')
+await page.getByPlaceholder(/colle le contenu CSV/).fill('titre;liens;map;side;roles;categories;zones\nImport 1;https://imgur.com/AbC123x;mirage;ct;fixe a;position;Jungle\nImport 2;;Nuke;X;;Inconnue;')
+await page.getByText('1 valide(s)').waitFor()
+await page.getByText(/Side invalide/).waitFor()
+await shot(page, '06-import')
+await page.getByRole('button', { name: 'Importer 1 carte' }).click()
+await page.getByText('1 carte importée.').waitFor(); step('import CSV avec prévisualisation')
+
+// 9. mobile
+page = await ctxFor(users.member, { width: 390, height: 844 })
+await page.goto(BASE)
+await page.getByLabel('Ajouter une carte').waitFor()
+await shot(page, '07-mobile')
+await page.getByRole('button', { name: /^Filtres/ }).click()
+await shot(page, '08-mobile-filters')
+await page.goto(BASE + '/new?map=5&side=CT')
+await page.getByText('Pré-rempli avec les filtres actifs.').waitFor()
+await shot(page, '09-mobile-form')
+// sauvegarde locale : rechargement sans perte
+await page.locator('#title').fill('Ne pas perdre ce titre')
+await page.waitForTimeout(600)
+await page.reload()
+await page.getByText('Saisie non terminée restaurée.').waitFor()
+if ((await page.locator('#title').inputValue()) !== 'Ne pas perdre ce titre') throw new Error('restauration')
+step('saisie restaurée après rechargement')
+await page.getByRole('button', { name: 'Repartir de zéro' }).click()
+if ((await page.locator('#title').inputValue()) !== '') throw new Error('repartir de zéro')
+// modification de sa propre carte (la carte importée n'est pas à lui, la copie non plus) : on édite en admin
+page = await ctxFor(users.admin)
+await page.goto(BASE + '/c/2/edit')
+await page.locator('#title').fill('Position fenêtre Palace (maj)')
+await page.getByRole('button', { name: 'Enregistrer' }).click()
+await page.getByRole('heading', { name: 'Position fenêtre Palace (maj)' }).waitFor()
+await page.getByRole('button', { name: /Historique/ }).click()
+await page.getByText(/Titre : « Position fenêtre Palace » → « Position fenêtre Palace \(maj\) »/).waitFor()
+await shot(page, '10-edit-history'); step('mobile : FAB, filtres repliables, formulaire')
+
+await browser.close()
+if (errors.length) { console.log('ERREURS NAVIGATEUR:\n' + errors.join('\n')); process.exit(1) }
+console.log('E2E OK')
