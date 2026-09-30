@@ -39,7 +39,8 @@ Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante
 ### 1. Projet Supabase
 
 1. Crée un projet sur [supabase.com](https://supabase.com).
-2. Applique les migrations dans l'ordre, au choix :
+2. Le plus simple : **SQL Editor → New query**, colle tout le fichier `supabase/setup_complet.sql`, puis **Run**.
+   Ce fichier regroupe toutes les migrations dans l'ordre. Sinon, applique les migrations une par une, au choix :
    - **SQL Editor** : colle et exécute, dans l'ordre, `20260930000000_init.sql`, `20260930000100_seed_tags.sql`
      `20261001000000_hardening.sql` puis `20261002000000_rounds_principles.sql` (dossier `supabase/migrations/`) ;
    - **CLI** : `supabase link --project-ref <ref>` puis `supabase db push`.

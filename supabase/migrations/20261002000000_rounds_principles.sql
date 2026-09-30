@@ -382,3 +382,10 @@ alter table public.principles add column sort_order int not null default 0;
 revoke execute on function public.card_snapshot(bigint) from authenticated;
 revoke execute on all functions in schema public from anon, public;
 grant execute on function public.save_principle(jsonb), public.reorder_tags(text, bigint[]), public.save_card(jsonb) to authenticated;
+
+-- Supabase accorde par défaut des droits aux rôles anon/authenticated sur les nouvelles tables :
+-- on les retire explicitement (la RLS bloquerait déjà ces accès, c'est une double sécurité).
+revoke all on all tables in schema public from anon;
+revoke insert, update, delete on public.card_round_types, public.principle_maps, public.principle_roles,
+  public.principle_categories, public.principle_round_types from authenticated;
+revoke insert, update on public.principles from authenticated;
