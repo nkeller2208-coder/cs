@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { signOut, useMember } from '../hooks/auth'
 import { useHotkey } from '../hooks/useHotkey'
 import { cx } from './ui'
+import { ErrorBoundary } from './ErrorBoundary'
 
 /** Lien vers le formulaire, pré-rempli avec les filtres actifs si on est sur la liste. */
 export function useNewCardHref() {
@@ -38,7 +39,11 @@ export function Layout() {
             <NavLink to="/" end className={nav}>
               Cartes
             </NavLink>
-            <NavLink to="/import" className={nav}>
+            <NavLink to="/stats" className={nav}>
+              <span className="sm:hidden">Stats</span>
+              <span className="hidden sm:inline">Tableau de bord</span>
+            </NavLink>
+            <NavLink to="/import" className={({ isActive }) => cx(nav({ isActive }), 'max-sm:hidden')}>
               Import
             </NavLink>
             {me.role === 'admin' && (
@@ -81,6 +86,9 @@ export function Layout() {
                   <p className="truncate px-2 pb-2 text-xs text-slate-500">
                     {me.role === 'admin' ? 'Admin' : 'Membre'} · {me.email}
                   </p>
+                  <Link to="/import" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800">
+                    Import CSV
+                  </Link>
                   <button
                     type="button"
                     onClick={() => signOut()}
@@ -94,7 +102,9 @@ export function Layout() {
           </div>
         </div>
       </header>
-      <Outlet />
+      <ErrorBoundary resetKey={location.pathname}>
+        <Outlet />
+      </ErrorBoundary>
       {!onForm && (
         <Link
           to={newHref}

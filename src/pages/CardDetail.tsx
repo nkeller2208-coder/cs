@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { canEditCard, qk, useCards, useMemberIndex, useTagIndex, useTags, type TagIndex } from '../hooks/data'
@@ -53,8 +53,16 @@ function CardDetail({ onClose }: { onClose: () => void }) {
   const idx = useTagIndex(tagsQ.data)
   const members = useMemberIndex()
   const card = cardsQ.data?.find((c) => c.id === cardId)
+  // Lien partagé vers une carte créée depuis le dernier chargement : on recharge une fois.
+  const [refetched, setRefetched] = useState(false)
+  useEffect(() => {
+    if (!card && cardsQ.isSuccess && !refetched) {
+      setRefetched(true)
+      cardsQ.refetch()
+    }
+  }, [card, cardsQ, refetched])
 
-  if (cardsQ.isLoading || tagsQ.isLoading) {
+  if (cardsQ.isLoading || tagsQ.isLoading || (!card && (!refetched || cardsQ.isFetching))) {
     return (
       <div className="grid place-items-center py-24">
         <Spinner className="size-8" />
@@ -89,6 +97,24 @@ function CardDetailBody({
   const [flagging, setFlagging] = useState(false)
   const [comment, setComment] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const location = useLocation()
+
+  // Carte précédente / suivante dans l'ordre de la grille filtrée (← / →).
+  const navState = location.state as { background?: unknown; order?: number[] } | null
+  const pos = navState?.order?.indexOf(card.id) ?? -1
+  const prevId = pos > 0 ? navState!.order![pos - 1] : null
+  const nextId = pos >= 0 && pos < navState!.order!.length - 1 ? navState!.order![pos + 1] : null
+  const go = (id: number | null) => id && navigate(`/c/${id}`, { replace: true, state: navState })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (['INPUT', 'TEXTAREA'].includes(t.tagName) || confirmDelete || flagging) return
+      if (e.key === 'ArrowLeft') go(prevId)
+      if (e.key === 'ArrowRight') go(nextId)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
   const editable = canEditCard(card, me)
   const canResolve = editable || card.review_by === me.id
 
@@ -146,9 +172,24 @@ function CardDetailBody({
           <h1 className="text-xl font-bold text-slate-50 sm:text-2xl">{card.title || 'Sans titre'}</h1>
           <CardBadges card={card} idx={idx} full />
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Fermer">
-          ✕
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {pos >= 0 && (
+            <>
+              <button type="button" onClick={() => go(prevId)} disabled={!prevId} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-25" aria-label="Carte précédente (←)" title="Carte précédente (←)">
+                ‹
+              </button>
+              <span className="text-xs text-slate-500 tabular-nums">
+                {pos + 1}/{navState!.order!.length}
+              </span>
+              <button type="button" onClick={() => go(nextId)} disabled={!nextId} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-25" aria-label="Carte suivante (→)" title="Carte suivante (→)">
+                ›
+              </button>
+            </>
+          )}
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Fermer">
+            ✕
+          </button>
+        </div>
       </header>
 
       {card.status === 'review' && (

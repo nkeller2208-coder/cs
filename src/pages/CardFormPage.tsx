@@ -140,17 +140,21 @@ function CardForm({
 
   // ---------------------------------------------------------------- sauvegardes
 
+  // Rien n'est sauvegardé tant que l'utilisateur n'a rien changé (ouvrir une
+  // duplication ou un formulaire pré-rempli puis repartir ne laisse aucune trace).
+  const initialSig = useMemo(() => signature(initial), [initial])
+  const dirty = signature(form) !== initialSig
+
   // 1. Locale, immédiate : aucune perte si l'onglet se ferme.
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (hasContent(form) || form.map_id) saveLocal(key, form)
-    }, 300)
+    if (!dirty) return
+    const t = setTimeout(() => saveLocal(key, form), 300)
     return () => clearTimeout(t)
-  }, [form, key])
+  }, [form, key, dirty])
 
   // 2. Serveur, en brouillon, pour une nouvelle carte (ou un brouillon existant).
   const savingChain = useRef<Promise<unknown>>(Promise.resolve())
-  const lastServerSig = useRef(isEdit ? signature(initial) : '')
+  const lastServerSig = useRef(initialSig)
   const formRef = useRef(form)
   formRef.current = form
   const autosaveEnabled = form.status === 'draft' && saving === null
@@ -170,10 +174,10 @@ function CardForm({
   }, [tags])
 
   useEffect(() => {
-    if (!autosaveEnabled || !hasContent(form)) return
+    if (!autosaveEnabled || !hasContent(form) || !dirty) return
     const t = setTimeout(persistDraft, SERVER_AUTOSAVE_MS)
     return () => clearTimeout(t)
-  }, [form, autosaveEnabled, persistDraft])
+  }, [form, autosaveEnabled, persistDraft, dirty])
 
   // ---------------------------------------------------------------- envoi
 
@@ -254,14 +258,16 @@ function CardForm({
 
   async function discard() {
     const msg = isEdit ? 'Annuler les modifications non enregistrées ?' : 'Abandonner cette carte ? Le brouillon sera supprimé.'
-    if ((hasContent(form) || isEdit) && !window.confirm(msg)) return
+    if (dirty && !window.confirm(msg)) return
     clearLocal(key)
     if (!isEdit && form.id) {
       await savingChain.current
       await deleteCard(form.id).catch(() => {})
       qc.invalidateQueries({ queryKey: qk.cards })
     }
-    navigate(-1)
+    // Formulaire ouvert directement par son URL : pas de page précédente dans l'appli.
+    if ((window.history.state as { idx?: number } | null)?.idx) navigate(-1)
+    else navigate(isEdit ? `/c/${source!.id}` : '/')
   }
 
   // Ctrl/Cmd + Entrée : publier
@@ -320,7 +326,7 @@ function CardForm({
               await savingChain.current
               if (!isEdit && form.id && form.id !== initial.id) await deleteCard(form.id).catch(() => {})
               clearLocal(key)
-              lastServerSig.current = isEdit ? signature(initial) : ''
+              lastServerSig.current = initialSig
               setForm(initial)
               setRestored(false)
               qc.invalidateQueries({ queryKey: qk.cards })

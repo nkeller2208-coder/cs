@@ -198,3 +198,8 @@ export async function fetchLastValues(userId: string): Promise<LastValues> {
   ) as { last_values: LastValues } | null
   return data?.last_values ?? {}
 }
+
+/** Supprime les cartes de démonstration (titre préfixé « [Démo] ») que l'utilisateur peut supprimer. */
+export async function deleteDemoCards(prefix: string) {
+  check(await supabase.from('cards').delete().like('title', `${prefix.replace(/[%_\\]/g, '\\$&')}%`))
+}

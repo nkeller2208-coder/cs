@@ -10,6 +10,7 @@ import { DeniedPage, LoginPage } from './pages/LoginPage'
 
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ImportPage = lazy(() => import('./pages/ImportPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 
 export function App() {
   const auth = useAuthState()
@@ -34,6 +35,7 @@ function MemberApp({ isAdmin }: { isAdmin: boolean }) {
           <Route path="c/:id/edit" element={<CardFormPage />} />
           <Route path="new" element={<CardFormPage />} />
           <Route path="import" element={<ImportPage />} />
+          <Route path="stats" element={<DashboardPage />} />
           <Route path="admin/*" element={isAdmin ? <AdminPage /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

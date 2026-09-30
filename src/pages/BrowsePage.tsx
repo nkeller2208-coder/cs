@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useCards, useTagIndex, useTags, EMPTY_TAGS } from '../hooks/data'
 import { useMember } from '../hooks/auth'
@@ -10,6 +10,7 @@ import { FilterPanel } from '../components/FilterPanel'
 import { CardTile } from '../components/CardTile'
 import { Button, EmptyState, Spinner, cx, inputClass } from '../components/ui'
 import { useNewCardHref } from '../components/Layout'
+import { DemoPanel } from '../components/DemoPanel'
 
 export function BrowsePage() {
   const me = useMember()
@@ -41,6 +42,20 @@ export function BrowsePage() {
   const counts = useMemo(() => facetCounts(cards, filters, me.id), [cards, filters, me.id])
   const views = useMemo(() => viewCounts(cards, me.id), [cards, me.id])
   const active = activeFilterCount(filters)
+  const order = useMemo(() => results.map((c) => c.id), [results])
+
+  // Rendu progressif : 48 cartes, puis la suite en arrivant en bas de page.
+  const PAGE = 48
+  const [shown, setShown] = useState(PAGE)
+  useEffect(() => setShown(PAGE), [params])
+  const sentinel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinel.current
+    if (!el || shown >= results.length) return
+    const obs = new IntersectionObserver((e) => e[0].isIntersecting && setShown((n) => n + PAGE), { rootMargin: '600px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [shown, results.length])
 
   const panel = <FilterPanel filters={filters} tags={tags} counts={counts} views={views} onChange={update} />
 
@@ -123,12 +138,23 @@ export function BrowsePage() {
             <Link to={newHref} className="text-amber-400 hover:text-amber-300">
               + Créer une carte{active ? ' avec ces filtres' : ''}
             </Link>
+            {!cards.length && me.role === 'admin' && (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <p>Ou charge des cartes de test pour tout vérifier :</p>
+                <DemoPanel compact />
+              </div>
+            )}
           </EmptyState>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {results.map((c) => (
-              <CardTile key={c.id} card={c} idx={idx} />
+            {results.slice(0, shown).map((c) => (
+              <CardTile key={c.id} card={c} idx={idx} order={order} />
             ))}
+          </div>
+        )}
+        {shown < results.length && (
+          <div ref={sentinel} className="flex justify-center py-4">
+            <Button onClick={() => setShown((n) => n + PAGE)}>Afficher plus ({results.length - shown} restantes)</Button>
           </div>
         )}
       </main>

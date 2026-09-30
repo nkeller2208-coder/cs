@@ -13,6 +13,7 @@ import type { Card, Member, MemberRole, Side, Tag, TagTable, Tags, Zone } from '
 import { useMembers } from '../hooks/data'
 import { Badge, Button, cx, inputClass, Spinner } from '../components/ui'
 import { useToast } from '../components/toast'
+import { DemoPanel } from '../components/DemoPanel'
 
 const TABS: [string, string][] = [
   ['membres', 'Membres'],
@@ -23,6 +24,7 @@ const TABS: [string, string][] = [
   ['risques', 'Risque'],
   ['utilitaires', 'Utilitaires'],
   ['economie', 'Économie'],
+  ['demo', 'Démo'],
 ]
 
 export default function AdminPage() {
@@ -63,6 +65,7 @@ export default function AdminPage() {
           <Route path="risques" element={<TagEditor table="risks" title="Niveaux de risque" hint="Ordre du moins au plus risqué. La couleur sert aux badges." />} />
           <Route path="utilitaires" element={<TagEditor table="utilities" title="Types d'utilitaire" />} />
           <Route path="economie" element={<TagEditor table="economies" title="Économie du round" />} />
+          <Route path="demo" element={<Section title="Données de démo"><DemoPanel /></Section>} />
         </Routes>
       )}
     </div>

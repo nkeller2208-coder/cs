@@ -7,7 +7,7 @@ import { markdownToText } from '../lib/markdown'
 import { CardBadges, StatusBadge } from './CardBadges'
 import { cx } from './ui'
 
-export function CardTile({ card, idx }: { card: Card; idx: TagIndex }) {
+export function CardTile({ card, idx, order }: { card: Card; idx: TagIndex; order?: number[] }) {
   const location = useLocation()
   const thumbMedia = card.media.find((m) => thumbnailOf(m))
   const thumb = thumbMedia ? thumbnailOf(thumbMedia) : null
@@ -18,7 +18,7 @@ export function CardTile({ card, idx }: { card: Card; idx: TagIndex }) {
   return (
     <Link
       to={`/c/${card.id}`}
-      state={{ background: location }}
+      state={{ background: location, order }}
       className={cx(
         'group flex flex-col overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-800 transition',
         'hover:-translate-y-0.5 hover:ring-slate-600 focus-visible:outline-2 focus-visible:outline-amber-400',

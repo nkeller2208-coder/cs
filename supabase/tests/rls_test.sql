@@ -65,6 +65,33 @@ begin
   perform set_config('test.draft', v_draft::text, false);
   perform set_config('test.card', v_id::text, false);
 
+  -- cohérence zones ↔ map et rôles ↔ side, écriture directe interdite
+  begin
+    perform public.save_card(jsonb_build_object('title', 'x', 'map_id', mirage, 'side', 'T', 'description', 'x',
+      'category_ids', jsonb_build_array(stuff), 'role_ids', jsonb_build_array(ctfixe)));
+    assert false, 'rôle CT accepté sur une carte T';
+  exception when raise_exception then null; end;
+  begin
+    perform public.save_card(jsonb_build_object('title', 'x', 'map_id', mirage, 'side', 'CT', 'description', 'x',
+      'category_ids', jsonb_build_array(stuff),
+      'zone_ids', jsonb_build_array((select id from public.zones where name = 'Banana' limit 1))));
+    assert false, 'zone d''une autre map acceptée';
+  exception when raise_exception then null; end;
+  begin
+    perform public.save_card(jsonb_build_object('title', 'x', 'map_id', mirage, 'side', 'CT', 'description', 'x',
+      'category_ids', jsonb_build_array(stuff),
+      'media', jsonb_build_array(jsonb_build_object('url', 'javascript:alert(1)', 'kind', 'link', 'url_key', 'x'))));
+    assert false, 'lien javascript: accepté';
+  exception when raise_exception then null; end;
+  begin
+    insert into public.cards (title, map_id, side, author_id) values ('direct', mirage, 'CT', auth.uid());
+    assert false, 'insertion directe acceptée';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.log_card_history(v_id, 'update');
+    assert false, 'log_card_history exposé';
+  exception when insufficient_privilege then null; end;
+
   -- proposer une zone
   insert into public.zones (map_id, name, pending) values (mirage, 'Chair', true) returning id into z;
   begin
@@ -93,7 +120,15 @@ begin
   assert (select count(*) from public.cards where id = current_setting('test.draft')::bigint) = 0, 'admin voit un brouillon';
   assert (select count(*) from public.cards where id = v_id) = 1, 'admin ne voit pas la carte';
   select id into palace from public.zones where name = 'Palace' and map_id = (select id from public.maps where name='Mirage');
-  insert into public.card_zones values (v_id, z);
+  -- plus d'écriture directe sur les tables de liaison
+  begin
+    insert into public.card_zones values (v_id, z);
+    assert false, 'écriture directe card_zones acceptée';
+  exception when insufficient_privilege then null; end;
+  perform public.save_card(jsonb_build_object('id', v_id, 'title', 'Smoke CT (maj)',
+    'map_id', (select id from public.maps where name='Mirage'), 'side', 'CT', 'description', 'desc',
+    'category_ids', jsonb_build_array((select id from public.categories where name = 'Position')),
+    'zone_ids', jsonb_build_array(z)));
   perform public.merge_zones(z, palace);
   assert (select zone_id from public.card_zones where card_id = v_id) = palace, 'fusion ratée';
   perform public.flag_card_for_review(v_id, 'Lineup cassé depuis le patch');

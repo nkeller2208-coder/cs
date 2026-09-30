@@ -141,9 +141,10 @@ export function applyFilters(cards: Card[], f: Filters, userId: string | undefin
   const out = cards.filter((c) => baseMatch(c, f, userId))
   const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
   switch (f.sort) {
-    case 'recent': return out.sort((a, b) => b.created_at.localeCompare(a.created_at))
-    case 'oldest': return out.sort((a, b) => a.created_at.localeCompare(b.created_at))
-    case 'alpha': return out.sort((a, b) => collator.compare(a.title, b.title))
+    // L'id départage les cartes créées au même instant (import, démo) : ordre stable.
+    case 'recent': return out.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
+    case 'oldest': return out.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id)
+    case 'alpha': return out.sort((a, b) => collator.compare(a.title, b.title) || a.id - b.id)
   }
 }
 

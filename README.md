@@ -25,8 +25,10 @@ Application web privée pour stocker, étiqueter et retrouver les contenus tacti
 | Import CSV avec prévisualisation et modèle téléchargeable | `src/pages/ImportPage.tsx`, `src/lib/csvImport.ts` |
 | Historique des modifications | table `card_history`, diff lisible dans `src/lib/history.ts` |
 | Administration des listes (ajouter, renommer, réordonner, archiver) et des membres | `src/pages/AdminPage.tsx` |
+| **Tableau de bord** : indicateurs, activité, couverture map × rôle (trous cliquables), catégories, types de contenu, risque, contributeurs, file « À revoir » | `src/pages/DashboardPage.tsx`, `src/lib/stats.ts` |
+| **Cartes de démo** : 10 cartes de test chargées / supprimées en un clic (Admin → Démo) | `src/lib/demo.ts` |
 
-Raccourcis : **N** nouvelle carte · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
+Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante dans la vue détaillée · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
 
 ---
 
@@ -36,7 +38,8 @@ Raccourcis : **N** nouvelle carte · **Ctrl/⌘ + Entrée** publier · **Ctrl/�
 
 1. Crée un projet sur [supabase.com](https://supabase.com).
 2. Applique les migrations dans l'ordre, au choix :
-   - **SQL Editor** : colle et exécute `supabase/migrations/20260930000000_init.sql`, puis `…000100_seed_tags.sql` ;
+   - **SQL Editor** : colle et exécute, dans l'ordre, `20260930000000_init.sql`, `20260930000100_seed_tags.sql`
+     puis `20261001000000_hardening.sql` (dossier `supabase/migrations/`) ;
    - **CLI** : `supabase link --project-ref <ref>` puis `supabase db push`.
 3. **Authentication → URL Configuration** : mets l'URL du site (ex. `https://playbook.vercel.app`) dans *Site URL*
    et ajoute-la (plus `http://localhost:5173` pour le dev) dans *Redirect URLs*.
@@ -63,6 +66,13 @@ insert into public.allowlist (discord_id, role) values ('123456789012345678', 'a
 
 Connecte-toi : la fiche membre est créée automatiquement. Les invitations suivantes se font depuis **Admin → Membres**.
 
+### 3 bis. Cartes de test
+
+Sur une base vide, l'admin voit un bouton **« Charger les cartes de démo »** (aussi dans **Admin → Démo**).
+Il crée 10 cartes « [Démo] … » qui couvrent chaque cas d'affichage : vidéo YouTube avec début, Short vertical,
+image directe, image cassée, lien externe, plusieurs médias, texte seul mis en forme, brouillon privé,
+carte « À revoir ». Un bouton les supprime toutes une fois les vérifications faites.
+
 > Une personne absente de la liste blanche peut s'authentifier auprès de Supabase, mais n'a accès à rien :
 > toutes les tables sont protégées par RLS (`is_member()`), et l'application affiche « Accès non autorisé ».
 
@@ -81,6 +91,9 @@ npm run dev                  # http://localhost:5173
 - **Netlify** : même principe ; `netlify.toml` contient la commande de build et la redirection SPA.
 
 Pense à ajouter l'URL de production dans les *Redirect URLs* Supabase.
+
+Les deux configurations envoient des en-têtes de sécurité (CSP, `X-Frame-Options`, `nosniff`, `noindex`).
+La CSP autorise `*.supabase.co` : si tu utilises un domaine Supabase personnalisé, ajoute-le à `connect-src`.
 
 ---
 
@@ -106,11 +119,14 @@ members (role admin|member) ─ member_prefs (dernières valeurs)      allowlist
 | Fonction | Rôle |
 |---|---|
 | `claim_membership()` | À la connexion : crée la fiche membre si l'email ou l'id Discord est sur la liste blanche |
-| `save_card(p jsonb)` | Création / mise à jour atomique d'une carte et de toutes ses étiquettes + historique + dernières valeurs |
+| `save_card(p jsonb)` | Seule voie d'écriture des cartes : création / mise à jour atomique avec toutes les étiquettes, contrôle des droits, cohérence (zones de la map, rôles du side), limites de taille, historique et dernières valeurs |
 | `flag_card_for_review(id, comment)` / `resolve_card_review(id)` | Statut « À revoir » (tout membre peut signaler) |
 | `merge_zones(source, target)` | Fusion de zones (admin), met à jour toutes les cartes |
 | `reorder_tags(table, ids)` | Réordonnancement (admin) |
 | `remove_member(id)` | Retire un membre et son entrée de liste blanche (ses cartes sont conservées) |
+
+Les clients n'ont aucun droit d'écriture direct sur `cards` (hors suppression) ni sur les tables de liaison
+et l'historique : tout passe par ces fonctions.
 
 ---
 
