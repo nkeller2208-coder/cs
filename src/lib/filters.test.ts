@@ -9,7 +9,7 @@ function card(p: Partial<Card>): Card {
     id: n, title: `Carte ${n}`, description: '', map_id: 1, side: 'CT', risk_id: null, status: 'published',
     review_comment: null, review_by: null, author_id: 'u1', created_at: `2026-01-${String(n).padStart(2, '0')}T00:00:00Z`,
     updated_by: null, updated_at: '', media: [], role_ids: [], category_ids: [], zone_ids: [], utility_ids: [],
-    economy_ids: [], ...p,
+    economy_ids: [], round_type_ids: [], ...p,
   }
 }
 

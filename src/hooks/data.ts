@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { fetchCards, fetchLastValues, fetchMembers, fetchTags } from '../lib/api'
+import { fetchCards, fetchLastValues, fetchMembers, fetchPrinciples, fetchTags } from '../lib/api'
 import type { Card, Member, Tags } from '../lib/types'
 import { useMember } from './auth'
 
@@ -10,9 +10,12 @@ export const qk = {
   members: ['members'] as const,
   lastValues: (id: string) => ['lastValues', id] as const,
   history: (id: number) => ['history', id] as const,
+  principles: ['principles'] as const,
 }
 
-export const EMPTY_TAGS: Tags = { maps: [], zones: [], roles: [], categories: [], risks: [], utilities: [], economies: [] }
+export const EMPTY_TAGS: Tags = {
+  maps: [], zones: [], roles: [], categories: [], risks: [], utilities: [], economies: [], round_types: [], principle_themes: [],
+}
 
 export function useTags() {
   return useQuery({ queryKey: qk.tags, queryFn: fetchTags, staleTime: 60_000 })
@@ -20,6 +23,10 @@ export function useTags() {
 
 export function useCards() {
   return useQuery({ queryKey: qk.cards, queryFn: fetchCards, staleTime: 15_000 })
+}
+
+export function usePrinciples() {
+  return useQuery({ queryKey: qk.principles, queryFn: fetchPrinciples, staleTime: 30_000 })
 }
 
 export function useMembers() {
@@ -44,6 +51,8 @@ export function useTagIndex(tags: Tags | undefined) {
       risks: index(t.risks),
       utilities: index(t.utilities),
       economies: index(t.economies),
+      round_types: index(t.round_types),
+      principle_themes: index(t.principle_themes),
     }
   }, [tags])
 }

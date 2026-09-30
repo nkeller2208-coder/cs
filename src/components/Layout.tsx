@@ -17,18 +17,18 @@ export function Layout() {
   const location = useLocation()
   const newHref = useNewCardHref()
   const [menu, setMenu] = useState(false)
-  const onForm = location.pathname === '/new' || location.pathname.endsWith('/edit')
+  const onForm = location.pathname === '/new' || location.pathname.endsWith('/edit') || location.pathname === '/principes/new'
 
   const openForm = useCallback(() => navigate(newHref), [navigate, newHref])
   useHotkey('n', openForm, !onForm)
 
   const nav = ({ isActive }: { isActive: boolean }) =>
-    cx('rounded-lg px-3 py-1.5 text-sm', isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-100')
+    cx('rounded-lg px-2 py-1.5 text-sm sm:px-3', isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-100')
 
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4">
+        <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-4">
           <Link to="/" className="flex items-center gap-2 font-bold tracking-tight text-slate-50">
             <img src="/favicon.svg" alt="" className="size-7" />
             <span className="hidden sm:inline">
@@ -38,6 +38,9 @@ export function Layout() {
           <nav className="flex items-center gap-1">
             <NavLink to="/" end className={nav}>
               Cartes
+            </NavLink>
+            <NavLink to="/principes" className={nav}>
+              Principes
             </NavLink>
             <NavLink to="/stats" className={nav}>
               <span className="sm:hidden">Stats</span>

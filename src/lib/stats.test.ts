@@ -15,10 +15,12 @@ const tags: Tags = {
     { id: 10, name: 'Pivot B', side: 'CT', sort_order: 1, archived: false },
     { id: 20, name: 'Central', side: 'T', sort_order: 1, archived: false },
   ],
-  categories: [{ id: 1, name: 'Stuff', shows_utility: true, sort_order: 1, archived: false }],
+  categories: [{ id: 1, name: 'Stuff', shows_utility: true, shows_round_type: false, sort_order: 1, archived: false }],
   risks: [{ id: 1, name: 'Passif', color: '#22c55e', sort_order: 1, archived: false }],
   utilities: [],
   economies: [],
+  round_types: [],
+  principle_themes: [],
 }
 
 const now = new Date('2026-09-30T12:00:00Z')
@@ -26,7 +28,7 @@ let n = 0
 const card = (p: Partial<Card>): Card => ({
   id: ++n, title: 't', description: '', map_id: 1, side: 'CT', risk_id: null, status: 'published', review_comment: null,
   review_by: null, author_id: 'a', created_at: '2026-09-25T10:00:00Z', updated_by: null, updated_at: '2026-09-25T10:00:00Z',
-  media: [], role_ids: [], category_ids: [1], zone_ids: [], utility_ids: [], economy_ids: [], ...p,
+  media: [], role_ids: [], category_ids: [1], zone_ids: [], utility_ids: [], economy_ids: [], round_type_ids: [], ...p,
 })
 
 describe('computeStats', () => {

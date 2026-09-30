@@ -25,6 +25,11 @@ export function CardBadges({ card, idx, full = false }: { card: Card; idx: TagIn
           {c.name}
         </Badge>
       ))}
+      {names(card.round_type_ids, idx.round_types).map((r) => (
+        <Badge key={`rt${r.name}`} className="bg-rose-500/15 text-rose-200 ring-rose-500/30">
+          ⚡ {r.name}
+        </Badge>
+      ))}
       {risk && <RiskBadge name={risk.name} color={risk.color} />}
       {full && (
         <>

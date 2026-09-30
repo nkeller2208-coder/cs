@@ -177,5 +177,53 @@ begin
   exception when insufficient_privilege then null; end;
 end $$;
 
+-- Rounds lancés et principes de jeu
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+do $$
+declare
+  mirage bigint := (select id from public.maps where name = 'Mirage');
+  rl bigint := (select id from public.categories where name = 'Round lancé');
+  pos bigint := (select id from public.categories where name = 'Position');
+  rush bigint := (select id from public.round_types where name = 'Rush');
+  central bigint := (select id from public.roles where side = 'T' and name = 'Central');
+  fixe bigint := (select id from public.roles where side = 'CT' and name = 'Fixe A');
+  c bigint; pr bigint;
+begin
+  assert (select count(*) from public.round_types) >= 8, 'types de round absents';
+  assert exists (select 1 from public.categories where name = 'Post-plant'), 'Post-plant absent';
+  c := public.save_card(jsonb_build_object('title', 'Rush B', 'map_id', mirage, 'side', 'T', 'description', 'go',
+    'category_ids', jsonb_build_array(rl), 'round_type_ids', jsonb_build_array(rush)));
+  assert (select count(*) from public.card_round_types where card_id = c) = 1, 'type de round non enregistré';
+  assert (select snapshot -> 'round_type_ids' from public.card_history where card_id = c limit 1) = jsonb_build_array(rush), 'snapshot sans round';
+  perform public.save_card(jsonb_build_object('id', c, 'title', 'Rush B', 'map_id', mirage, 'side', 'T', 'description', 'go',
+    'category_ids', jsonb_build_array(pos), 'round_type_ids', jsonb_build_array(rush)));
+  assert (select count(*) from public.card_round_types where card_id = c) = 0, 'round gardé sans la catégorie';
+
+  pr := public.save_principle(jsonb_build_object('title', 'Toujours trader', 'summary', 's', 'body', 'b',
+    'sides', jsonb_build_array('T'), 'map_ids', jsonb_build_array(mirage), 'role_ids', jsonb_build_array(central)));
+  assert (select count(*) from public.principle_roles where principle_id = pr) = 1, 'principe : rôle absent';
+  begin
+    perform public.save_principle(jsonb_build_object('title', 'x', 'sides', jsonb_build_array('T'), 'role_ids', jsonb_build_array(fixe)));
+    assert false, 'principe : rôle CT accepté sur side T';
+  exception when raise_exception then null; end;
+  insert into public.principle_cards (principle_id, card_id, linked_by) values (pr, c, auth.uid());
+  begin
+    insert into public.principle_roles values (pr, fixe);
+    assert false, 'écriture directe principle_roles acceptée';
+  exception when insufficient_privilege then null; end;
+  perform set_config('test.principle', pr::text, false);
+end $$;
+
+-- L'admin peut modifier le principe d'un autre ; un autre membre non.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$
+declare pr bigint := current_setting('test.principle')::bigint;
+begin
+  perform public.save_principle(jsonb_build_object('id', pr, 'title', 'Toujours trader (admin)'));
+  assert (select title from public.principles where id = pr) = 'Toujours trader (admin)', 'admin ne peut pas modifier';
+  assert (select count(*) from public.principle_cards where principle_id = pr) = 1, 'lien carte perdu';
+  perform public.reorder_tags('round_types', array(select id from public.round_types order by name));
+end $$;
+
 reset role;
 select 'OK : tous les tests RLS passent' as result;

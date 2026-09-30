@@ -17,6 +17,7 @@ export interface FormState {
   utility_ids: number[]
   risk_id: number | null
   economy_ids: number[]
+  round_type_ids: number[]
   title: string
   titleTouched: boolean
   description: string
@@ -24,7 +25,7 @@ export interface FormState {
 
 export const EMPTY_FORM: FormState = {
   id: null, status: 'draft', media: [], map_id: null, side: null, role_ids: [], zone_ids: [], category_ids: [],
-  utility_ids: [], risk_id: null, economy_ids: [], title: '', titleTouched: false, description: '',
+  utility_ids: [], risk_id: null, economy_ids: [], round_type_ids: [], title: '', titleTouched: false, description: '',
 }
 
 export type FormErrors = Partial<Record<'media' | 'title' | 'map' | 'side' | 'category', string>>
@@ -45,6 +46,11 @@ export function validate(f: FormState): FormErrors {
 /** Le type d'utilitaire n'est proposé que si une catégorie « Stuff » est cochée. */
 export function showsUtility(f: Pick<FormState, 'category_ids'>, tags: Tags): boolean {
   return tags.categories.some((c) => c.shows_utility && f.category_ids.includes(c.id))
+}
+
+/** Le type de round n'est proposé que si une catégorie « Round lancé » est cochée. */
+export function showsRoundType(f: Pick<FormState, 'category_ids'>, tags: Tags): boolean {
+  return tags.categories.some((c) => c.shows_round_type && f.category_ids.includes(c.id))
 }
 
 /** Garde la cohérence : rôles du side, zones de la map. */
@@ -73,6 +79,7 @@ export function toPayload(f: FormState, status: CardStatus, tags: Tags): CardPay
     zone_ids: f.zone_ids,
     utility_ids: showsUtility(f, tags) ? f.utility_ids : [],
     economy_ids: f.economy_ids,
+    round_type_ids: showsRoundType(f, tags) ? f.round_type_ids : [],
     remember: status !== 'draft',
   }
 }
@@ -94,6 +101,7 @@ export function formFromCard(c: Card): FormState {
     utility_ids: c.utility_ids,
     risk_id: c.risk_id,
     economy_ids: c.economy_ids,
+    round_type_ids: c.round_type_ids,
     title: c.title,
     titleTouched: true,
     description: c.description,
@@ -120,6 +128,7 @@ export function formFromParams(params: URLSearchParams, tags: Tags): FormState {
       utility_ids: f.util,
       risk_id: one(f.risk),
       economy_ids: f.eco,
+      round_type_ids: f.round,
     },
     tags,
   )
@@ -139,6 +148,7 @@ export function applyLastValues(f: FormState, v: LastValues, tags: Tags): FormSt
       utility_ids: alive(v.utility_ids, tags.utilities),
       risk_id: v.risk_id ?? null,
       economy_ids: alive(v.economy_ids, tags.economies),
+      round_type_ids: alive(v.round_type_ids, tags.round_types),
     },
     tags,
   )

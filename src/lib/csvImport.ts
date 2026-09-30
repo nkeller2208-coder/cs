@@ -5,7 +5,7 @@ import { normalize } from './text'
 import type { CardStatus, Side, Tag, Tags } from './types'
 
 export const CSV_COLUMNS = [
-  'titre', 'description', 'liens', 'map', 'side', 'roles', 'categories', 'zones', 'risque', 'utilitaires', 'economie', 'statut',
+  'titre', 'description', 'liens', 'map', 'side', 'roles', 'categories', 'zones', 'risque', 'utilitaires', 'rounds', 'economie', 'statut',
 ] as const
 type Column = (typeof CSV_COLUMNS)[number]
 
@@ -31,6 +31,7 @@ const HEADER_ALIASES: Record<string, Column> = {
   risque: 'risque', risk: 'risque',
   utilitaires: 'utilitaires', utilitaire: 'utilitaires', stuff: 'utilitaires',
   economie: 'economie', eco: 'economie',
+  rounds: 'rounds', round: 'rounds', typederound: 'rounds', roundlance: 'rounds', typesderound: 'rounds',
   statut: 'statut', status: 'statut',
 }
 
@@ -88,6 +89,7 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
     if (!split(r.categories).length) errors.push('Au moins une catégorie est obligatoire')
     const utils = resolve(split(r.utilitaires), tags.utilities, 'Utilitaire')
     const ecos = resolve(split(r.economie), tags.economies, 'Économie')
+    const rounds = resolve(split(r.rounds), tags.round_types, 'Type de round')
     const riskName = (r.risque ?? '').trim()
     const risk = riskName ? find(tags.risks, riskName) : undefined
     if (riskName && !risk) errors.push(`Risque inconnu : ${riskName}`)
@@ -113,6 +115,9 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
     if (!media.length && !description) errors.push('Il faut au moins un lien ou une description')
     if (utils.length && !tags.categories.some((c) => c.shows_utility && cats.includes(c.id))) {
       warnings.push('Utilitaires ignorés (catégorie Stuff non cochée)')
+    }
+    if (rounds.length && !tags.categories.some((c) => c.shows_round_type && cats.includes(c.id))) {
+      warnings.push('Types de round ignorés (catégorie « Round lancé » non cochée)')
     }
 
     const statusKey = normalize(r.statut ?? '')
@@ -140,6 +145,7 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
             zone_ids: zoneIds,
             utility_ids: utils,
             economy_ids: ecos,
+            round_type_ids: rounds,
             remember: false,
           },
     }
@@ -158,12 +164,12 @@ export function templateCsv(tags: Tags): string {
     CSV_COLUMNS as unknown as string[],
     [
       'Smoke window depuis T spawn', 'Viser le coin du toit puis **jumpthrow**.', 'https://www.youtube.com/watch?v=XXXXXXXXXXX&t=42s',
-      mapName, 'T', t.slice(0, 1).join(';'), stuff, zones.join(';'), first(tags.risks), first(tags.utilities), first(tags.economies), 'publié',
+      mapName, 'T', t.slice(0, 1).join(';'), stuff, zones.join(';'), first(tags.risks), first(tags.utilities), '', first(tags.economies), 'publié',
     ],
     [
       'Position fixe A', 'Tenir le site depuis le coin.\\n- jouer passif\\n- reculer si flash', 'https://i.imgur.com/XXXXXXX.png',
       mapName, 'CT', ct.slice(0, 2).join(';'), tags.categories.find((c) => !c.shows_utility && !c.archived)?.name ?? '', zones.slice(0, 1).join(';'),
-      first(tags.risks), '', '', 'brouillon',
+      first(tags.risks), '', '', '', 'brouillon',
     ],
   ]
   return '﻿' + Papa.unparse(rows, { quotes: true })

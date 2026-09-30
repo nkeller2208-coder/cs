@@ -26,7 +26,9 @@ Application web privée pour stocker, étiqueter et retrouver les contenus tacti
 | Historique des modifications | table `card_history`, diff lisible dans `src/lib/history.ts` |
 | Administration des listes (ajouter, renommer, réordonner, archiver) et des membres | `src/pages/AdminPage.tsx` |
 | **Tableau de bord** : indicateurs, activité, couverture map × rôle (trous cliquables), catégories, types de contenu, risque, contributeurs, file « À revoir » | `src/pages/DashboardPage.tsx`, `src/lib/stats.ts` |
-| **Cartes de démo** : 10 cartes de test chargées / supprimées en un clic (Admin → Démo) | `src/lib/demo.ts` |
+| **Rounds lancés** : catégorie « Round lancé » avec sous-choix Rush / Déclic / Strat / Default / Exé / Fake / Split / Contact (liste éditable), catégorie « Post-plant » | `20261002000000_rounds_principles.sql`, formulaire, filtres |
+| **Principes de jeu** : fiches de doctrine classées par thème, rattachées à des étiquettes (side, map, rôle, catégorie, type de round) et/ou à des cartes précises ; affichées sur les cartes concernées | `src/pages/PrinciplesPage.tsx`, `src/lib/principles.ts` |
+| **Cartes de démo** : 13 cartes et 4 principes de test chargées / supprimées en un clic (Admin → Démo) | `src/lib/demo.ts` |
 
 Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante dans la vue détaillée · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
 
@@ -39,7 +41,7 @@ Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante
 1. Crée un projet sur [supabase.com](https://supabase.com).
 2. Applique les migrations dans l'ordre, au choix :
    - **SQL Editor** : colle et exécute, dans l'ordre, `20260930000000_init.sql`, `20260930000100_seed_tags.sql`
-     puis `20261001000000_hardening.sql` (dossier `supabase/migrations/`) ;
+     `20261001000000_hardening.sql` puis `20261002000000_rounds_principles.sql` (dossier `supabase/migrations/`) ;
    - **CLI** : `supabase link --project-ref <ref>` puis `supabase db push`.
 3. **Authentication → URL Configuration** : mets l'URL du site (ex. `https://playbook.vercel.app`) dans *Site URL*
    et ajoute-la (plus `http://localhost:5173` pour le dev) dans *Redirect URLs*.
@@ -69,9 +71,22 @@ Connecte-toi : la fiche membre est créée automatiquement. Les invitations suiv
 ### 3 bis. Cartes de test
 
 Sur une base vide, l'admin voit un bouton **« Charger les cartes de démo »** (aussi dans **Admin → Démo**).
-Il crée 10 cartes « [Démo] … » qui couvrent chaque cas d'affichage : vidéo YouTube avec début, Short vertical,
+Il crée 13 cartes et 4 principes « [Démo] … » qui couvrent chaque cas : vidéo YouTube avec début, Short vertical,
 image directe, image cassée, lien externe, plusieurs médias, texte seul mis en forme, brouillon privé,
-carte « À revoir ». Un bouton les supprime toutes une fois les vérifications faites.
+carte « À revoir », rounds lancés (rush, déclic), post-plant, principes généraux ou rattachés par étiquettes.
+Un bouton les supprime tous une fois les vérifications faites.
+
+### Principes de jeu
+
+Menu **Principes** : la doctrine de l'équipe, classée par thème (liste éditable dans Admin → Thèmes).
+Un principe peut :
+- **porter des étiquettes** (side, maps, rôles, catégories, types de round) : il s'affiche alors automatiquement
+  sur toutes les cartes qui correspondent (ET entre familles, OU dans une famille, comme les filtres) ;
+- **être rattaché à des cartes précises**, depuis le principe ou depuis la vue détaillée d'une carte
+  (« + Rattacher un principe », « Créer depuis cette carte ») ;
+- rester **général** (aucune étiquette) : il n'apparaît que sur les cartes rattachées à la main.
+
+L'auteur et les admins modifient un principe ; tout membre peut rattacher ou détacher une carte.
 
 > Une personne absente de la liste blanche peut s'authentifier auprès de Supabase, mais n'a accès à rien :
 > toutes les tables sont protégées par RLS (`is_member()`), et l'application affiche « Accès non autorisé ».
@@ -106,7 +121,12 @@ cards ┼─< card_media (url, kind, url_key, position)
       ├─< card_roles >─ roles          ├─< card_zones >─ zones
       ├─< card_categories >─ categories├─< card_utilities >─ utilities
       ├─< card_economies >─ economies  └─< card_history (instantané JSON par modification)
+      └─< card_round_types >─ round_types     (si catégorie « Round lancé » : categories.shows_round_type)
 members (role admin|member) ─ member_prefs (dernières valeurs)      allowlist (email | discord_id)
+
+principle_themes ─< principles (title, summary, body, sides[], pinned)
+principles ─< principle_maps / principle_roles / principle_categories / principle_round_types
+principles ─< principle_cards >─ cards   (rattachements explicites)
 ```
 
 - Les listes d'étiquettes ont `sort_order` et `archived` : une valeur archivée reste sur les cartes mais n'est plus proposée.
@@ -123,6 +143,7 @@ members (role admin|member) ─ member_prefs (dernières valeurs)      allowlist
 | `flag_card_for_review(id, comment)` / `resolve_card_review(id)` | Statut « À revoir » (tout membre peut signaler) |
 | `merge_zones(source, target)` | Fusion de zones (admin), met à jour toutes les cartes |
 | `reorder_tags(table, ids)` | Réordonnancement (admin) |
+| `save_principle(p jsonb)` | Création / mise à jour atomique d'un principe et de ses étiquettes (auteur ou admin) |
 | `remove_member(id)` | Retire un membre et son entrée de liste blanche (ses cartes sont conservées) |
 
 Les clients n'ont aucun droit d'écriture direct sur `cards` (hors suppression) ni sur les tables de liaison

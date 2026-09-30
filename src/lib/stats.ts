@@ -37,6 +37,7 @@ export interface Stats {
   activity: Bucket[]
   coverage: Record<Side, { roles: { id: number; name: string }[]; rows: CoverageRow[] }>
   categories: { id: number; name: string; count: number }[]
+  rounds: { id: number; name: string; count: number }[]
   content: { kind: ContentKind; count: number }[]
   risks: { id: number | null; name: string; color: string | null; count: number }[]
   leaderboard: { memberId: string | null; name: string; count: number }[]
@@ -151,6 +152,10 @@ export function computeStats(
   const catCounts = countBy(cats.map((c) => c.id), (c) => c.category_ids)
   const categories = cats.map((c, i) => ({ id: c.id, name: c.name, count: catCounts[i] }))
 
+  const rts = tags.round_types.filter((r) => !r.archived || base.some((x) => x.round_type_ids.includes(r.id)))
+  const rtCounts = countBy(rts.map((r) => r.id), (c) => c.round_type_ids)
+  const rounds = rts.map((r, i) => ({ id: r.id, name: r.name, count: rtCounts[i] }))
+
   const content = (['video', 'image', 'link', 'text'] as ContentKind[]).map((kind) => ({
     kind,
     count: base.filter((c) => contentKind(c) === kind).length,
@@ -184,6 +189,7 @@ export function computeStats(
     activity,
     coverage,
     categories,
+    rounds,
     content,
     risks,
     leaderboard,

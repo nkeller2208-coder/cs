@@ -11,6 +11,9 @@ import { DeniedPage, LoginPage } from './pages/LoginPage'
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ImportPage = lazy(() => import('./pages/ImportPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const PrinciplesPage = lazy(() => import('./pages/PrinciplesPage'))
+const PrincipleDetailPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleDetailPage })))
+const PrincipleFormPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleFormPage })))
 
 export function App() {
   const auth = useAuthState()
@@ -36,6 +39,10 @@ function MemberApp({ isAdmin }: { isAdmin: boolean }) {
           <Route path="new" element={<CardFormPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="stats" element={<DashboardPage />} />
+          <Route path="principes" element={<PrinciplesPage />} />
+          <Route path="principes/new" element={<PrincipleFormPage />} />
+          <Route path="principes/:id" element={<PrincipleDetailPage />} />
+          <Route path="principes/:id/edit" element={<PrincipleFormPage />} />
           <Route path="admin/*" element={isAdmin ? <AdminPage /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

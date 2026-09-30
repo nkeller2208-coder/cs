@@ -1,4 +1,4 @@
-import type { CardPayload } from './api'
+import type { CardPayload, PrinciplePayload } from './api'
 import { parseMedia } from './media'
 import { normalize } from './text'
 import type { Side, Tag, Tags } from './types'
@@ -16,6 +16,7 @@ interface DemoSpec {
   utilities?: string[]
   risk?: string
   economies?: string[]
+  rounds?: string[]
   links?: string[]
   description?: string
   draft?: boolean
@@ -97,6 +98,26 @@ const SPECS: DemoSpec[] = [
     description: 'Test **carte minimale** : pas de média, pas de risque, pas d’économie.',
   },
   {
+    title: 'Rush B fumé',
+    map: 'Mirage', side: 'T', roles: ['Extre B', '+1'], zones: ['Apartments', 'Site B'],
+    categories: ['Round lancé', 'Stuff'], rounds: ['Rush'], utilities: ['Smoke', 'Flash'], risk: 'Agressif', economies: ['Full buy'],
+    links: [`${VIDEO}&t=2m`],
+    description: 'Test **round lancé** (type Rush) : 5 joueurs Apps, smokes Short et Kitchen, flashs au-dessus.',
+  },
+  {
+    title: 'Déclic mid après info',
+    map: 'Inferno', side: 'T', roles: ['Central'], zones: ['Top Mid', 'Second Mid'],
+    categories: ['Round lancé'], rounds: ['Déclic', 'Default'], risk: 'En réaction',
+    description: 'Test **round lancé** (Default puis Déclic) : on joue lent, le déclic part sur la première info mid.',
+  },
+  {
+    title: 'Post-plant B Site',
+    map: 'Mirage', side: 'T', roles: ['Extre B'], zones: ['Site B', 'Market', 'Apartments'],
+    categories: ['Post-plant'], risk: 'Passif',
+    links: [IMAGE_2],
+    description: 'Test **post-plant** : un joueur Apps, un joueur Market-side, crossfire sur le defuse.',
+  },
+  {
     title: 'Brouillon de test',
     map: 'Train', side: 'T', categories: ['Position'],
     description: 'Test **brouillon** : visible uniquement dans « Mes brouillons ».',
@@ -139,6 +160,7 @@ export function buildDemoCards(tags: Tags): { payload: CardPayload; review?: str
         zone_ids: pick(tags.zones.filter((z) => z.map_id === map.id), s.zones, missing, 'zone'),
         utility_ids: pick(tags.utilities, s.utilities, missing, 'utilitaire'),
         economy_ids: pick(tags.economies, s.economies, missing, 'économie'),
+        round_type_ids: pick(tags.round_types, s.rounds, missing, 'type de round'),
         remember: false,
       },
     })
@@ -148,4 +170,78 @@ export function buildDemoCards(tags: Tags): { payload: CardPayload; review?: str
 
 export function isDemo(title: string) {
   return title.startsWith(DEMO_PREFIX)
+}
+
+interface DemoPrinciple {
+  title: string
+  theme: string
+  summary: string
+  body: string
+  sides?: Side[]
+  maps?: string[]
+  roles?: string[]
+  categories?: string[]
+  rounds?: string[]
+  pinned?: boolean
+  /** Cartes de démo à rattacher explicitement (titres sans préfixe). */
+  cards?: string[]
+}
+
+const PRINCIPLES: DemoPrinciple[] = [
+  {
+    title: 'Toujours jouer en trade',
+    theme: 'Duels & trades',
+    summary: 'Un joueur ne prend jamais un duel seul si un coéquipier ne peut pas le trader dans la seconde.',
+    body: 'Test **principe général** (aucune étiquette) : il ne s’affiche pas automatiquement sur les cartes, seulement sur celles qui lui sont rattachées.\n\n- Distance de trade : deux secondes maximum\n- Le second joueur annonce sa position avant l’entrée',
+    pinned: true,
+    cards: ['Exé B complète', 'Rush B fumé'],
+  },
+  {
+    title: 'Un rush se déclenche sur une info, pas sur un timer',
+    theme: 'Fondamentaux',
+    summary: 'On lance le rush quand l’info confirme un site faible, jamais « parce qu’il reste 40 secondes ».',
+    body: 'Test **principe par étiquettes** : side T + catégorie Round lancé. Il apparaît automatiquement sur toutes les cartes « Round lancé » côté T.',
+    sides: ['T'],
+    categories: ['Round lancé'],
+  },
+  {
+    title: 'Post-plant : jouer le temps, pas les kills',
+    theme: 'Post-plant & retake',
+    summary: 'Après la pose, on se cache du defuse et on attend que le CT s’engage.',
+    body: 'Test **principe par étiquettes** : catégorie Post-plant, side T.\n\n1. Crossfire sur la bombe\n2. Molotov au dernier moment\n3. Pas de peek sec',
+    sides: ['T'],
+    categories: ['Post-plant'],
+  },
+  {
+    title: 'AWP CT : un tir, puis on change d’angle',
+    theme: 'Positionnement',
+    summary: 'Après chaque tir, l’AWP se repositionne : l’adversaire connaît son angle.',
+    body: 'Test **principe par rôle** : rôle AWP (CT) sur toutes les maps.',
+    sides: ['CT'],
+    roles: ['AWP'],
+  },
+]
+
+/** Principes de démonstration (titres préfixés) et cartes à rattacher par titre. */
+export function buildDemoPrinciples(tags: Tags): { payload: PrinciplePayload; cardTitles: string[] }[] {
+  return PRINCIPLES.map((p) => {
+    const missing: string[] = []
+    const theme = tags.principle_themes.find((t) => normalize(t.name) === normalize(p.theme))
+    const sides = p.sides ?? []
+    return {
+      cardTitles: (p.cards ?? []).map((t) => DEMO_PREFIX + t),
+      payload: {
+        title: DEMO_PREFIX + p.title,
+        summary: p.summary,
+        body: p.body,
+        theme_id: theme?.id ?? null,
+        sides,
+        pinned: !!p.pinned,
+        map_ids: pick(tags.maps, p.maps, missing, 'map'),
+        role_ids: pick(tags.roles.filter((r) => !sides.length || sides.includes(r.side)), p.roles, missing, 'rôle'),
+        category_ids: pick(tags.categories, p.categories, missing, 'catégorie'),
+        round_type_ids: pick(tags.round_types, p.rounds, missing, 'type de round'),
+      },
+    }
+  })
 }

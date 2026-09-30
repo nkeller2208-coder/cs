@@ -24,6 +24,8 @@ const TABS: [string, string][] = [
   ['risques', 'Risque'],
   ['utilitaires', 'Utilitaires'],
   ['economie', 'Économie'],
+  ['rounds', 'Rounds'],
+  ['themes', 'Thèmes (principes)'],
   ['demo', 'Démo'],
 ]
 
@@ -61,10 +63,12 @@ export default function AdminPage() {
           <Route path="maps" element={<TagEditor table="maps" title="Maps" hint="Le map pool actif. Archive une map sortie du pool : ses cartes restent consultables." />} />
           <Route path="zones" element={<ZonesAdmin />} />
           <Route path="roles" element={<RolesAdmin />} />
-          <Route path="categories" element={<TagEditor table="categories" title="Catégories" hint="« Affiche l'utilitaire » fait apparaître le choix Smoke/Flash/… dans le formulaire (catégorie Stuff)." />} />
+          <Route path="categories" element={<TagEditor table="categories" title="Catégories" hint="« Affiche l'utilitaire » fait apparaître Smoke/Flash/… (Stuff) ; « Affiche le type de round » fait apparaître Rush/Déclic/Strat… (Round lancé)." />} />
           <Route path="risques" element={<TagEditor table="risks" title="Niveaux de risque" hint="Ordre du moins au plus risqué. La couleur sert aux badges." />} />
           <Route path="utilitaires" element={<TagEditor table="utilities" title="Types d'utilitaire" />} />
           <Route path="economie" element={<TagEditor table="economies" title="Économie du round" />} />
+          <Route path="rounds" element={<TagEditor table="round_types" title="Types de round" hint="Proposés quand la catégorie « Round lancé » est cochée (rush, déclic, strat…)." />} />
+          <Route path="themes" element={<TagEditor table="principle_themes" title="Thèmes des principes de jeu" hint="Regroupent les principes dans la page « Principes »." />} />
           <Route path="demo" element={<Section title="Données de démo"><DemoPanel /></Section>} />
         </Routes>
       )}
@@ -74,7 +78,7 @@ export default function AdminPage() {
 
 // ---------------------------------------------------------------- utilitaires
 
-type AnyTag = Tag & Partial<{ side: Side; color: string; shows_utility: boolean; map_id: number; pending: boolean }>
+type AnyTag = Tag & Partial<{ side: Side; color: string; shows_utility: boolean; shows_round_type: boolean; map_id: number; pending: boolean }>
 
 function usageCounts(cards: Card[] | undefined, table: TagTable): Map<number, number> {
   const m = new Map<number, number>()
@@ -88,6 +92,7 @@ function usageCounts(cards: Card[] | undefined, table: TagTable): Map<number, nu
       case 'categories': c.category_ids.forEach(add); break
       case 'utilities': c.utility_ids.forEach(add); break
       case 'economies': c.economy_ids.forEach(add); break
+      case 'round_types': c.round_type_ids.forEach(add); break
     }
   }
   return m
@@ -275,6 +280,17 @@ function TagRow({
             className="accent-amber-500"
           />
           Affiche l'utilitaire
+        </label>
+      )}
+      {table === 'categories' && (
+        <label className="flex items-center gap-1.5 text-xs text-slate-400">
+          <input
+            type="checkbox"
+            checked={!!tag.shows_round_type}
+            onChange={(e) => m.update.mutate({ id: tag.id, values: { shows_round_type: e.target.checked } })}
+            className="accent-amber-500"
+          />
+          Affiche le type de round
         </label>
       )}
       <Button size="sm" variant="ghost" onClick={() => m.update.mutate({ id: tag.id, values: { archived: !tag.archived } })}>

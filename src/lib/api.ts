@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import type {
-  AllowlistEntry, Card, HistoryEntry, LastValues, Member, Tags, TagTable, CardStatus, Side, Media,
+  AllowlistEntry, Card, HistoryEntry, LastValues, Member, Principle, Tags, TagTable, CardStatus, Side, Media,
 } from './types'
 import { byOrder } from './text'
 
@@ -24,7 +24,7 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
 // ------------------------------------------------------------ Étiquettes
 
 export async function fetchTags(): Promise<Tags> {
-  const [maps, zones, roles, categories, risks, utilities, economies] = await Promise.all([
+  const [maps, zones, roles, categories, risks, utilities, economies, round_types, principle_themes] = await Promise.all([
     fetchAll((a, b) => supabase.from('maps').select('*').range(a, b)),
     fetchAll((a, b) => supabase.from('zones').select('*').range(a, b)),
     fetchAll((a, b) => supabase.from('roles').select('*').range(a, b)),
@@ -32,6 +32,8 @@ export async function fetchTags(): Promise<Tags> {
     fetchAll((a, b) => supabase.from('risks').select('*').range(a, b)),
     fetchAll((a, b) => supabase.from('utilities').select('*').range(a, b)),
     fetchAll((a, b) => supabase.from('economies').select('*').range(a, b)),
+    fetchAll((a, b) => supabase.from('round_types').select('*').range(a, b)),
+    fetchAll((a, b) => supabase.from('principle_themes').select('*').range(a, b)),
   ])
   return {
     maps: (maps as Tags['maps']).sort(byOrder),
@@ -41,6 +43,8 @@ export async function fetchTags(): Promise<Tags> {
     risks: (risks as Tags['risks']).sort(byOrder),
     utilities: (utilities as Tags['utilities']).sort(byOrder),
     economies: (economies as Tags['economies']).sort(byOrder),
+    round_types: (round_types as Tags['round_types']).sort(byOrder),
+    principle_themes: (principle_themes as Tags['principle_themes']).sort(byOrder),
   }
 }
 
@@ -74,19 +78,20 @@ export async function proposeZone(mapId: number, name: string, userId: string) {
 
 const CARD_SELECT =
   '*, card_media(url, kind, url_key, position), card_roles(role_id), card_categories(category_id), ' +
-  'card_zones(zone_id), card_utilities(utility_id), card_economies(economy_id)'
+  'card_zones(zone_id), card_utilities(utility_id), card_economies(economy_id), card_round_types(round_type_id)'
 
-interface CardRow extends Omit<Card, 'media' | 'role_ids' | 'category_ids' | 'zone_ids' | 'utility_ids' | 'economy_ids'> {
+interface CardRow extends Omit<Card, 'media' | 'role_ids' | 'category_ids' | 'zone_ids' | 'utility_ids' | 'economy_ids' | 'round_type_ids'> {
   card_media: (Media & { position: number })[]
   card_roles: { role_id: number }[]
   card_categories: { category_id: number }[]
   card_zones: { zone_id: number }[]
   card_utilities: { utility_id: number }[]
   card_economies: { economy_id: number }[]
+  card_round_types: { round_type_id: number }[]
 }
 
 function toCard(r: CardRow): Card {
-  const { card_media, card_roles, card_categories, card_zones, card_utilities, card_economies, ...rest } = r
+  const { card_media, card_roles, card_categories, card_zones, card_utilities, card_economies, card_round_types, ...rest } = r
   return {
     ...rest,
     media: [...card_media].sort((a, b) => a.position - b.position).map(({ url, kind, url_key }) => ({ url, kind, url_key })),
@@ -95,6 +100,7 @@ function toCard(r: CardRow): Card {
     zone_ids: card_zones.map((x) => x.zone_id),
     utility_ids: card_utilities.map((x) => x.utility_id),
     economy_ids: card_economies.map((x) => x.economy_id),
+    round_type_ids: (card_round_types ?? []).map((x) => x.round_type_id),
   }
 }
 
@@ -122,6 +128,7 @@ export interface CardPayload {
   zone_ids: number[]
   utility_ids: number[]
   economy_ids: number[]
+  round_type_ids: number[]
   remember?: boolean
 }
 
@@ -201,5 +208,65 @@ export async function fetchLastValues(userId: string): Promise<LastValues> {
 
 /** Supprime les cartes de démonstration (titre préfixé « [Démo] ») que l'utilisateur peut supprimer. */
 export async function deleteDemoCards(prefix: string) {
-  check(await supabase.from('cards').delete().like('title', `${prefix.replace(/[%_\\]/g, '\\$&')}%`))
+  const pattern = `${prefix.replace(/[%_\\]/g, '\\$&')}%`
+  check(await supabase.from('cards').delete().like('title', pattern))
+  check(await supabase.from('principles').delete().like('title', pattern))
+}
+
+// ------------------------------------------------------------ Principes de jeu
+
+const PRINCIPLE_SELECT =
+  '*, principle_maps(map_id), principle_roles(role_id), principle_categories(category_id), ' +
+  'principle_round_types(round_type_id), principle_cards(card_id)'
+
+interface PrincipleRow extends Omit<Principle, 'map_ids' | 'role_ids' | 'category_ids' | 'round_type_ids' | 'card_ids'> {
+  principle_maps: { map_id: number }[]
+  principle_roles: { role_id: number }[]
+  principle_categories: { category_id: number }[]
+  principle_round_types: { round_type_id: number }[]
+  principle_cards: { card_id: number }[]
+}
+
+export async function fetchPrinciples(): Promise<Principle[]> {
+  const rows = await fetchAll((a, b) =>
+    supabase.from('principles').select(PRINCIPLE_SELECT).order('id').range(a, b) as unknown as PromiseLike<{
+      data: PrincipleRow[] | null
+      error: unknown
+    }>,
+  )
+  return rows.map(({ principle_maps, principle_roles, principle_categories, principle_round_types, principle_cards, ...p }) => ({
+    ...p,
+    map_ids: principle_maps.map((x) => x.map_id),
+    role_ids: principle_roles.map((x) => x.role_id),
+    category_ids: principle_categories.map((x) => x.category_id),
+    round_type_ids: principle_round_types.map((x) => x.round_type_id),
+    card_ids: principle_cards.map((x) => x.card_id),
+  }))
+}
+
+export interface PrinciplePayload {
+  id?: number | null
+  title: string
+  summary: string
+  body: string
+  theme_id: number | null
+  sides: Side[]
+  pinned: boolean
+  map_ids: number[]
+  role_ids: number[]
+  category_ids: number[]
+  round_type_ids: number[]
+}
+
+export async function savePrinciple(p: PrinciplePayload): Promise<number> {
+  return check(await supabase.rpc('save_principle', { p })) as number
+}
+export async function deletePrinciple(id: number) {
+  check(await supabase.from('principles').delete().eq('id', id))
+}
+export async function linkPrincipleCard(principleId: number, cardId: number, userId: string) {
+  check(await supabase.from('principle_cards').insert({ principle_id: principleId, card_id: cardId, linked_by: userId }))
+}
+export async function unlinkPrincipleCard(principleId: number, cardId: number) {
+  check(await supabase.from('principle_cards').delete().eq('principle_id', principleId).eq('card_id', cardId))
 }

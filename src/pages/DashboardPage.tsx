@@ -115,9 +115,15 @@ export default function DashboardPage() {
 
       <Coverage stats={stats} />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Panel title="Par catégorie" subtitle="toute la base · clic pour filtrer">
           <BarList items={stats.categories.map((c) => ({ key: String(c.id), label: c.name, value: c.count, to: `/?cat=${c.id}` }))} />
+        </Panel>
+        <Panel title="Rounds lancés" subtitle="type de round · clic pour filtrer">
+          <BarList
+            empty="Aucune carte « Round lancé »."
+            items={stats.rounds.map((r) => ({ key: String(r.id), label: r.name, value: r.count, to: `/?round=${r.id}` }))}
+          />
         </Panel>
         <Panel title="Type de contenu" subtitle="média principal de la carte">
           <BarList items={stats.content.map((c) => ({ key: c.kind, label: CONTENT_LABEL[c.kind], value: c.count }))} />

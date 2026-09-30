@@ -7,7 +7,7 @@ import { deleteCard, proposeZone, saveCard } from '../lib/api'
 import { errorMessage } from '../lib/supabase'
 import {
   applyLastValues, clearLocal, formFromCard, formFromDuplicate, formFromParams, hasContent, loadLocal,
-  localKey, nextInSeries, reconcile, saveLocal, showsUtility, signature, TITLE_MAX, toPayload, validate,
+  localKey, nextInSeries, reconcile, saveLocal, showsRoundType, showsUtility, signature, TITLE_MAX, toPayload, validate,
   type FormErrors, type FormState,
 } from '../lib/cardForm'
 import { normalize } from '../lib/text'
@@ -284,7 +284,7 @@ function CardForm({
 
   // ---------------------------------------------------------------- rendu
 
-  const toggle = (field: 'role_ids' | 'zone_ids' | 'category_ids' | 'utility_ids' | 'economy_ids', value: number) =>
+  const toggle = (field: 'role_ids' | 'zone_ids' | 'category_ids' | 'utility_ids' | 'economy_ids' | 'round_type_ids', value: number) =>
     set((f) => ({ [field]: f[field].includes(value) ? f[field].filter((v) => v !== value) : [...f[field], value] }))
 
   const activeOrSelected = <T extends { id: number; archived: boolean }>(list: T[], selected: number[]) =>
@@ -302,6 +302,12 @@ function CardForm({
   }, [lv, idx])
 
   const utilityVisible = showsUtility(form, tags)
+  const roundVisible = showsRoundType(form, tags)
+  // Numérotation des champs : les champs conditionnels décalent la suite.
+  const steps = ['util', 'round', 'risk', 'eco', 'title', 'desc'].filter(
+    (k) => (k !== 'util' || utilityVisible) && (k !== 'round' || roundVisible),
+  )
+  const n = (k: string) => 7 + steps.indexOf(k)
   const sideRoles = activeOrSelected(tags.roles.filter((r) => r.side === form.side), form.role_ids)
 
   return (
@@ -471,7 +477,7 @@ function CardForm({
 
         {/* 7. Utilitaire (si Stuff) */}
         {utilityVisible && (
-          <Field label="7. Type d'utilitaire" optional>
+          <Field label={`${n('util')}. Type d'utilitaire`} optional>
             <div className="flex flex-wrap gap-2">
               {activeOrSelected(tags.utilities, form.utility_ids).map((u) => (
                 <Chip key={u.id} selected={form.utility_ids.includes(u.id)} onClick={() => toggle('utility_ids', u.id)}>
@@ -482,8 +488,21 @@ function CardForm({
           </Field>
         )}
 
-        {/* 8. Risque */}
-        <Field label={`${utilityVisible ? 8 : 7}. Risque`} optional>
+        {/* Type de round (si « Round lancé ») */}
+        {roundVisible && (
+          <Field label={`${n('round')}. Type de round`} hint="Rush, déclic, strat… (plusieurs choix possibles)" optional>
+            <div className="flex flex-wrap gap-2">
+              {activeOrSelected(tags.round_types, form.round_type_ids).map((r) => (
+                <Chip key={r.id} selected={form.round_type_ids.includes(r.id)} onClick={() => toggle('round_type_ids', r.id)}>
+                  {r.name}
+                </Chip>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        {/* Risque */}
+        <Field label={`${n('risk')}. Risque`} optional>
           <div className="flex flex-wrap gap-2">
             {activeOrSelected(tags.risks, form.risk_id ? [form.risk_id] : []).map((r) => (
               <Chip key={r.id} selected={form.risk_id === r.id} onClick={() => set({ risk_id: form.risk_id === r.id ? null : r.id })}>
@@ -495,7 +514,7 @@ function CardForm({
         </Field>
 
         {/* 9. Économie */}
-        <Field label={`${utilityVisible ? 9 : 8}. Économie du round`} optional>
+        <Field label={`${n('eco')}. Économie du round`} optional>
           <div className="flex flex-wrap gap-2">
             {activeOrSelected(tags.economies, form.economy_ids).map((e) => (
               <Chip key={e.id} selected={form.economy_ids.includes(e.id)} onClick={() => toggle('economy_ids', e.id)}>
@@ -508,7 +527,7 @@ function CardForm({
         {/* 10. Titre */}
         <div ref={refs.title}>
           <Field
-            label={`${utilityVisible ? 10 : 9}. Titre`}
+            label={`${n('title')}. Titre`}
             htmlFor="title"
             error={errors.title}
             action={
@@ -529,7 +548,7 @@ function CardForm({
         </div>
 
         {/* 11. Description */}
-        <Field label={`${utilityVisible ? 11 : 10}. Description`} optional={form.media.length > 0} htmlFor="description">
+        <Field label={`${n('desc')}. Description`} optional={form.media.length > 0} htmlFor="description">
           <MarkdownEditor
             id="description"
             value={form.description}

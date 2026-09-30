@@ -10,12 +10,14 @@ const tags: Tags = {
     { id: 20, name: 'AWP', side: 'T', sort_order: 1, archived: false },
   ],
   categories: [
-    { id: 1, name: 'Stuff', shows_utility: true, sort_order: 1, archived: false },
-    { id: 2, name: 'Position', shows_utility: false, sort_order: 2, archived: false },
+    { id: 1, name: 'Stuff', shows_utility: true, shows_round_type: false, sort_order: 1, archived: false },
+    { id: 2, name: 'Position', shows_utility: false, shows_round_type: false, sort_order: 2, archived: false },
   ],
   risks: [{ id: 1, name: 'Passif', color: '#0f0', sort_order: 1, archived: false }],
   utilities: [{ id: 1, name: 'Smoke', sort_order: 1, archived: false }],
   economies: [{ id: 1, name: 'Eco', sort_order: 1, archived: false }],
+  round_types: [],
+  principle_themes: [],
 }
 
 describe('import CSV', () => {

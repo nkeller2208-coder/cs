@@ -9,6 +9,7 @@ type Names = {
   utilities: Map<number, { name: string }>
   economies: Map<number, { name: string }>
   risks: Map<number, { name: string }>
+  round_types: Map<number, { name: string }>
 }
 
 const STATUS: Record<string, string> = { draft: 'Brouillon', published: 'Publié', review: 'À revoir' }
@@ -31,6 +32,7 @@ export function diffSnapshots(prev: Snapshot | null, next: Snapshot, n: Names): 
     ['category_ids', 'Catégories', n.categories],
     ['utility_ids', 'Utilitaires', n.utilities],
     ['economy_ids', 'Économie', n.economies],
+    ['round_type_ids', 'Types de round', n.round_types],
   ]
   for (const [key, label, map] of lists) {
     const a = new Set((prev[key] as number[] | undefined) ?? [])

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { canEditCard, qk, useCards, useMemberIndex, useTagIndex, useTags, type TagIndex } from '../hooks/data'
+import { canEditCard, qk, useCards, useMemberIndex, usePrinciples, useTagIndex, useTags, type TagIndex } from '../hooks/data'
 import { useMember } from '../hooks/auth'
-import { deleteCard, fetchHistory, flagCard, resolveCardReview } from '../lib/api'
+import { deleteCard, fetchHistory, flagCard, linkPrincipleCard, resolveCardReview, unlinkPrincipleCard } from '../lib/api'
+import { principlesForCard } from '../lib/principles'
+import { LinkPicker } from '../components/PrinciplePieces'
 import { errorMessage } from '../lib/supabase'
 import { formatDate } from '../lib/text'
 import { diffSnapshots } from '../lib/history'
@@ -219,6 +221,8 @@ function CardDetailBody({
         )}
         {card.description.trim() && <Markdown source={card.description} className="text-base" />}
 
+        <CardPrinciples card={card} me={me} />
+
         <dl className="grid grid-cols-1 gap-x-6 gap-y-1 border-t border-slate-800 pt-4 text-sm sm:grid-cols-2">
           <div className="flex gap-2">
             <dt className="text-slate-500">Auteur</dt>
@@ -336,6 +340,78 @@ function History({ cardId, idx, members }: { cardId: number; idx: TagIndex; memb
           )
         })}
       </ol>
+    </section>
+  )
+}
+
+/** Principes de jeu de la carte : rattachés explicitement + concernés par ses étiquettes. */
+function CardPrinciples({ card, me }: { card: Card; me: Member }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const principles = usePrinciples().data ?? []
+  const [adding, setAdding] = useState(false)
+  const { linked, matching } = principlesForCard(card, principles)
+  const refresh = () => qc.invalidateQueries({ queryKey: qk.principles })
+  const onError = (e: unknown) => toast(errorMessage(e), 'error')
+  const link = useMutation({ mutationFn: (pid: number) => linkPrincipleCard(pid, card.id, me.id), onSuccess: refresh, onError })
+  const unlink = useMutation({ mutationFn: (pid: number) => unlinkPrincipleCard(pid, card.id), onSuccess: refresh, onError })
+  if (card.status === 'draft' && !linked.length && !matching.length) return null
+
+  const item = (p: (typeof principles)[number], auto: boolean) => (
+    <li key={p.id} className="flex items-start gap-2 rounded-lg bg-slate-950/40 px-3 py-2 ring-1 ring-slate-800">
+      <span className="mt-0.5 text-amber-400">{p.pinned ? '★' : '◆'}</span>
+      <div className="min-w-0 flex-1">
+        <Link to={`/principes/${p.id}`} className="font-medium text-slate-100 hover:text-amber-300">
+          {p.title}
+        </Link>
+        {p.summary && <p className="text-sm text-slate-400">{p.summary}</p>}
+      </div>
+      {auto ? (
+        <span className="shrink-0 text-[11px] text-slate-500" title="Rattaché automatiquement : les étiquettes de la carte correspondent">
+          via étiquettes
+        </span>
+      ) : (
+        <button type="button" onClick={() => unlink.mutate(p.id)} className="shrink-0 rounded px-1.5 text-slate-500 hover:text-red-300" aria-label={`Détacher ${p.title}`} title="Détacher">
+          ✕
+        </button>
+      )}
+    </li>
+  )
+
+  return (
+    <section className="space-y-2 border-t border-slate-800 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Principes de jeu</h2>
+        {card.status !== 'draft' && (
+          <div className="flex gap-3 text-sm">
+            <button type="button" onClick={() => setAdding((a) => !a)} className="text-amber-400 hover:text-amber-300">
+              + Rattacher un principe
+            </button>
+            <Link to={`/principes/new?card=${card.id}`} className="text-slate-400 hover:text-slate-200">
+              Créer depuis cette carte
+            </Link>
+          </div>
+        )}
+      </div>
+      {adding && (
+        <LinkPicker
+          items={principles}
+          exclude={linked.map((p) => p.id)}
+          onPick={(p) => {
+            link.mutate(p.id)
+            setAdding(false)
+          }}
+          placeholder="Chercher un principe…"
+        />
+      )}
+      {!linked.length && !matching.length ? (
+        <p className="text-sm text-slate-500">Aucun principe rattaché.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {linked.map((p) => item(p, false))}
+          {matching.map((p) => item(p, true))}
+        </ul>
+      )}
     </section>
   )
 }

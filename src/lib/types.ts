@@ -20,6 +20,7 @@ export interface Role extends Tag {
 }
 export interface Category extends Tag {
   shows_utility: boolean
+  shows_round_type: boolean
 }
 export interface Risk extends Tag {
   color: string
@@ -33,6 +34,8 @@ export interface Tags {
   risks: Risk[]
   utilities: Tag[]
   economies: Tag[]
+  round_types: Tag[]
+  principle_themes: Tag[]
 }
 
 export type TagTable = keyof Tags
@@ -63,6 +66,29 @@ export interface Card {
   zone_ids: number[]
   utility_ids: number[]
   economy_ids: number[]
+  round_type_ids: number[]
+}
+
+/** Principe de jeu : fiche de doctrine, rattachée à des étiquettes et à des cartes. */
+export interface Principle {
+  id: number
+  title: string
+  summary: string
+  body: string
+  theme_id: number | null
+  sides: Side[]
+  pinned: boolean
+  sort_order: number
+  author_id: string | null
+  created_at: string
+  updated_by: string | null
+  updated_at: string
+  map_ids: number[]
+  role_ids: number[]
+  category_ids: number[]
+  round_type_ids: number[]
+  /** Cartes rattachées explicitement. */
+  card_ids: number[]
 }
 
 export interface Member {
@@ -92,6 +118,7 @@ export interface LastValues {
   risk_id?: number | null
   utility_ids?: number[]
   economy_ids?: number[]
+  round_type_ids?: number[]
 }
 
 export interface HistoryEntry {
@@ -115,5 +142,6 @@ export interface HistoryEntry {
     zone_ids: number[]
     utility_ids: number[]
     economy_ids: number[]
+    round_type_ids?: number[]
   }
 }

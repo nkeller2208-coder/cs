@@ -2,7 +2,7 @@ import type { Card, Side, Tags } from './types'
 import { normalize } from './text'
 
 /** Familles d'étiquettes filtrables : ET entre familles, OU au sein d'une famille. */
-export const FAMILIES = ['map', 'side', 'role', 'zone', 'cat', 'util', 'risk', 'eco'] as const
+export const FAMILIES = ['map', 'side', 'role', 'zone', 'cat', 'util', 'round', 'risk', 'eco'] as const
 export type Family = (typeof FAMILIES)[number]
 
 export type SortKey = 'recent' | 'oldest' | 'alpha'
@@ -16,6 +16,7 @@ export interface Filters {
   zone: number[]
   cat: number[]
   util: number[]
+  round: number[]
   risk: number[]
   eco: number[]
   q: string
@@ -24,7 +25,7 @@ export interface Filters {
 }
 
 export const EMPTY_FILTERS: Filters = {
-  map: [], side: [], role: [], zone: [], cat: [], util: [], risk: [], eco: [],
+  map: [], side: [], role: [], zone: [], cat: [], util: [], round: [], risk: [], eco: [],
   q: '', sort: 'recent', view: 'all',
 }
 
@@ -37,6 +38,7 @@ export function cardValues(card: Card, family: Family): (number | string)[] {
     case 'zone': return card.zone_ids
     case 'cat': return card.category_ids
     case 'util': return card.utility_ids
+    case 'round': return card.round_type_ids
     case 'risk': return card.risk_id == null ? [] : [card.risk_id]
     case 'eco': return card.economy_ids
   }
@@ -56,6 +58,7 @@ export function filtersFromParams(params: URLSearchParams): Filters {
     zone: nums('zone'),
     cat: nums('cat'),
     util: nums('util'),
+    round: nums('round'),
     risk: nums('risk'),
     eco: nums('eco'),
     q: params.get('q') ?? '',

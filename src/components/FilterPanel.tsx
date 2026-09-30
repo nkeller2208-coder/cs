@@ -69,6 +69,8 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
 
   const stuffSelected = tags.categories.some((c) => c.shows_utility && filters.cat.includes(c.id))
   const showUtility = filters.cat.length === 0 || stuffSelected || filters.util.length > 0
+  const roundSelected = tags.categories.some((c) => c.shows_round_type && filters.cat.includes(c.id))
+  const showRound = filters.cat.length === 0 || roundSelected || filters.round.length > 0
 
   const viewLabels: [ViewKey, string][] = [
     ['all', 'Toutes'],
@@ -132,6 +134,7 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
 
       <Section title="Catégorie">{chips(tags.categories, 'cat')}</Section>
       {showUtility && <Section title="Utilitaire">{chips(tags.utilities, 'util')}</Section>}
+      {showRound && <Section title="Round lancé">{chips(tags.round_types, 'round')}</Section>}
       <Section title="Risque">
         {visible(tags.risks, 'risk').map((r) => {
           const selected = filters.risk.includes(r.id)
