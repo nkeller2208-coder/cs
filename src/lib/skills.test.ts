@@ -6,7 +6,10 @@ const skill = (id: number, group_id: number | null, extra = {}) => ({
   id, name: `S${id}`, group_id, description: '', sort_order: id, archived: false, created_by: null, ...extra,
 })
 const data: SkillsData = {
+  teams: [{ id: 1, name: 'Équipe' }],
   team: { id: 1, name: 'Équipe' },
+  my_role: 'captain',
+  can_manage: true,
   groups: [
     { id: 1, name: 'Utilitaire', sort_order: 2, archived: false },
     { id: 2, name: 'Mécaniques', sort_order: 1, archived: false },
@@ -20,9 +23,9 @@ const data: SkillsData = {
     { member_id: 'a', skill_id: 5, status: 'to_work', updated_by: null, updated_at: '' },
   ],
   players: [
-    { id: 'a', display_name: 'A', email: null, avatar_url: null, role: 'admin' },
-    { id: 'b', display_name: 'B', email: null, avatar_url: null, role: 'member' },
-    { id: 'c', display_name: 'C', email: null, avatar_url: null, role: 'member' },
+    { id: 'a', display_name: 'A', email: null, avatar_url: null, team_role: 'captain' },
+    { id: 'b', display_name: 'B', email: null, avatar_url: null, team_role: 'player' },
+    { id: 'c', display_name: 'C', email: null, avatar_url: null, team_role: 'player' },
   ],
 }
 

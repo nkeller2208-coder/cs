@@ -7,6 +7,7 @@ import type { AppEnv } from './env'
 import { principles } from './principles'
 import { skills } from './skills'
 import { tags } from './tags'
+import { teams } from './teams'
 
 const app = new Hono<AppEnv>().basePath('/api')
 
@@ -33,6 +34,7 @@ app.route('/members', members)
 app.route('/allowlist', allowlist)
 app.route('/principles', principles)
 app.route('/skills', skills)
+app.route('/teams', teams)
 
 app.notFound((c) => c.json({ error: 'Introuvable' }, 404))
 app.onError((err, c) => {

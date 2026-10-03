@@ -18,6 +18,15 @@ interface AllowEntry {
   discord_id: string | null
   role: 'admin' | 'member'
   note: string | null
+  team_id: number | null
+  team_role: string | null
+}
+
+/** Invitation dans une équipe : la personne la rejoint dès qu'elle se connecte. */
+async function joinInvitedTeam(env: Env, entry: AllowEntry, memberId: string) {
+  if (!entry.team_id) return
+  await env.DB.prepare('INSERT OR IGNORE INTO team_members (team_id, member_id, role, added_by) SELECT ?, ?, ?, invited_by FROM allowlist WHERE id = ?')
+    .bind(entry.team_id, memberId, entry.team_role ?? 'player', entry.id).run()
 }
 
 interface Identity {
@@ -42,6 +51,7 @@ async function claimMember(env: Env, entry: AllowEntry, who: Identity): Promise<
       )
       .bind(who.discord_id ?? null, who.email ?? null, who.avatar_url ?? null, who.name ?? null, existing.id)
       .run()
+    await joinInvitedTeam(env, entry, existing.id)
     return existing.id
   }
   const id = crypto.randomUUID()
@@ -53,7 +63,9 @@ async function claimMember(env: Env, entry: AllowEntry, who: Identity): Promise<
     )
     .bind(id, entry.id, who.email ?? entry.email, who.discord_id ?? entry.discord_id, who.name || entry.note || (who.email ?? entry.email ?? '').split('@')[0], who.avatar_url ?? null, entry.role)
     .run()
-  return (await first<{ id: string }>(db, 'SELECT id FROM members WHERE allowlist_id = ?', entry.id))!.id
+  const memberId = (await first<{ id: string }>(db, 'SELECT id FROM members WHERE allowlist_id = ?', entry.id))!.id
+  await joinInvitedTeam(env, entry, memberId)
+  return memberId
 }
 
 async function startSession(c: Ctx, memberId: string) {

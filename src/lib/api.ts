@@ -1,7 +1,7 @@
 import { api } from './http'
 import type {
   AllowlistEntry, Card, CardStatus, HistoryEntry, LastValues, Me, Media, Member, Principle, Side, SkillsData,
-  SkillStatus, Tags, TagTable,
+  SkillStatus, Tags, TagTable, Team, TeamRole,
 } from './types'
 import { byOrder } from './text'
 
@@ -125,8 +125,29 @@ export const unlinkPrincipleCard = (principleId: number, cardId: number) => api.
 
 // ------------------------------------------------------------ Compétences
 
-export const fetchSkills = () => api.get<SkillsData>('/skills')
-export const setTeamSkill = (skillId: number, status: SkillStatus) =>
-  api.put<{ ok: true; propagated: number }>(`/skills/${skillId}/team`, { status })
+export const fetchSkills = (teamId?: number | null) => api.get<SkillsData>(`/skills${teamId ? `?team=${teamId}` : ''}`)
+export const setTeamSkill = (skillId: number, teamId: number, status: SkillStatus) =>
+  api.put<{ ok: true; propagated: number }>(`/skills/${skillId}/team`, { status, team_id: teamId })
 export const setMemberSkill = (skillId: number, memberId: string, status: SkillStatus) =>
   api.put(`/skills/${skillId}/members/${memberId}`, { status })
+
+// ------------------------------------------------------------ Équipes
+
+export interface InviteResult {
+  added: boolean
+  entry_id?: number
+  url?: string
+  expires_at?: string
+}
+
+export const fetchTeams = () => api.get<Team[]>('/teams')
+export const createTeam = (name: string, captainId?: string | null) => api.post<{ id: number }>('/teams', { name, captain_id: captainId || undefined })
+export const renameTeam = (id: number, name: string) => api.patch(`/teams/${id}`, { name })
+export const deleteTeam = (id: number) => api.del(`/teams/${id}`)
+export const setTeamMember = (teamId: number, memberId: string, role: TeamRole) => api.put(`/teams/${teamId}/members/${memberId}`, { role })
+export const removeTeamMember = (teamId: number, memberId: string) => api.del(`/teams/${teamId}/members/${memberId}`)
+export const inviteToTeam = (teamId: number, invite: { note?: string; email?: string; discord_id?: string; role: TeamRole }) =>
+  api.post<InviteResult>(`/teams/${teamId}/invites`, invite)
+export const teamInviteLink = (teamId: number, entryId: number) =>
+  api.post<{ url: string; expires_at: string }>(`/teams/${teamId}/invites/${entryId}/link`)
+export const cancelTeamInvite = (teamId: number, entryId: number) => api.del(`/teams/${teamId}/invites/${entryId}`)

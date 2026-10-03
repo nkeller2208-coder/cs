@@ -11,9 +11,10 @@ import { errorMessage } from '../lib/http'
 import { formatDay, normalize } from '../lib/text'
 import type { Card, Member, MemberRole, Side, Skill, Tag, TagTable, Tags, Zone } from '../lib/types'
 import { useMembers } from '../hooks/data'
-import { Badge, Button, Modal, cx, inputClass, Spinner } from '../components/ui'
+import { Badge, Button, cx, inputClass, Spinner } from '../components/ui'
 import { useToast } from '../components/toast'
 import { DemoPanel } from '../components/DemoPanel'
+import { InviteLinkModal } from '../components/InviteLinkModal'
 import { SkillEditor, skillsKey } from './SkillsPage'
 import { groupSkills } from '../lib/skills'
 
@@ -603,34 +604,7 @@ function MembersAdmin() {
         </ul>
       </Section>
 
-      <Modal open={!!link} onClose={() => setLink(null)} title={`Lien de connexion${link?.who ? ` · ${link.who}` : ''}`}>
-        {link && (
-          <div className="space-y-3 p-5">
-            <p className="text-sm text-slate-300">
-              Envoie ce lien à la personne (message privé Discord, SMS…). En l'ouvrant, elle est connectée directement. Valable
-              jusqu'au <strong>{formatDay(link.expires_at)}</strong>, sur plusieurs appareils.
-            </p>
-            <input readOnly value={link.url} onFocus={(e) => e.target.select()} className={cx(inputClass, 'font-mono text-xs')} aria-label="Lien de connexion" />
-            <p className="text-xs text-amber-300">⚠ Ce lien vaut mot de passe : ne le partage pas publiquement.</p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(link.url)
-                    toast('Lien copié', 'info')
-                  } catch {
-                    toast('Copie impossible : sélectionne le lien à la main', 'error')
-                  }
-                }}
-              >
-                Copier le lien
-              </Button>
-              <Button onClick={() => setLink(null)}>Fermer</Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <InviteLinkModal link={link} onClose={() => setLink(null)} />
     </div>
   )
 }
@@ -640,7 +614,7 @@ function MembersAdmin() {
 function SkillsAdmin() {
   const qc = useQueryClient()
   const toast = useToast()
-  const q = useQuery({ queryKey: skillsKey, queryFn: fetchSkills })
+  const q = useQuery({ queryKey: [...skillsKey, 'catalogue'], queryFn: () => fetchSkills() })
   const [editing, setEditing] = useState<Skill | null>(null)
   const [creating, setCreating] = useState(false)
   const done = () => qc.invalidateQueries({ queryKey: skillsKey })

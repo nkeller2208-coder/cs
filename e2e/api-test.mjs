@@ -132,23 +132,57 @@ ok(pr.card_ids.includes(c1) && pr.title === 'Toujours trader (admin)', 'principe
 const other = new Client()
 expect(await other.del(`/principles/${p}`), 401, 'anonyme ne supprime pas')
 
-// ------------------------------------------------------------ Compétences
-let skills = (await member.get('/skills')).data
-ok(skills.players.length === 2 && skills.skills.length > 0, 'compétences : liste et joueurs')
+// ------------------------------------------------------------ Équipes et rôles
+expect(await member.post('/teams', { name: 'Pirate' }), 403, 'membre ne crée pas d’équipe')
+const alpha = (await admin.post('/teams', { name: 'Alpha', captain_id: meB.id })).data.id
+const beta = (await admin.post('/teams', { name: 'Beta' })).data.id
+expect(await admin.post('/teams', { name: 'Alpha' }), 409, 'nom d’équipe unique')
+let teamsList = (await member.get('/teams')).data
+ok(teamsList.find((t) => t.id === alpha).can_manage && !teamsList.find((t) => t.id === beta).can_manage, 'capitaine gère son équipe, pas les autres')
+
+// Le capitaine invite un nouveau joueur : il rejoint l'équipe à sa première connexion.
+const inv = (await member.post(`/teams/${alpha}/invites`, { note: 'Recrue', role: 'player' })).data
+ok(inv.url && !inv.added, 'capitaine : lien d’invitation créé')
+expect(await member.post(`/teams/${beta}/invites`, { note: 'X' }), 403, 'capitaine : pas d’invitation dans une autre équipe')
+const recrue = new Client()
+const r1 = await fetch(inv.url, { redirect: 'manual' })
+recrue.cookie = r1.headers.getSetCookie()[0].split(';')[0]
+const meR = (await recrue.get('/auth/me')).data
+ok(meR.display_name === 'Recrue', 'recrue connectée')
+teamsList = (await recrue.get('/teams')).data
+ok(teamsList.find((t) => t.id === alpha).members.some((m) => m.member_id === meR.id && m.role === 'player'), 'recrue dans l’équipe Alpha en joueur')
+expect(await recrue.post(`/teams/${alpha}/invites`, { note: 'Pote' }), 403, 'joueur ne peut pas inviter')
+expect(await recrue.req('PUT', `/teams/${alpha}/members/${meR.id}`, { role: 'captain' }), 403, 'joueur ne se nomme pas capitaine')
+expect(await member.req('PUT', `/teams/${alpha}/members/${meB.id}`, { role: 'player' }), 400, 'dernier capitaine ne peut pas se rétrograder')
+expect(await member.req('PUT', `/teams/${alpha}/members/${meA.id}`, { role: 'coach' }), 200, 'capitaine nomme un coach')
+
+// ------------------------------------------------------------ Compétences par équipe
+let skills = (await member.get(`/skills?team=${alpha}`)).data
+ok(skills.team.id === alpha && skills.can_manage && skills.my_role === 'captain', 'compétences : équipe et rôle')
+ok(skills.players.length === 2 && !skills.players.some((p) => p.id === meA.id), 'joueurs = capitaine + joueur (pas le coach)')
 const sk = skills.skills[0].id
-expect(await member.put(`/skills/${sk}/team`, { status: 'to_work' }), 403, "membre ne fixe pas le statut d'équipe")
-expect(await member.put(`/skills/${sk}/members/${meA.id}`, { status: 'acquired' }), 403, "membre ne modifie pas un autre joueur")
-expect(await member.put(`/skills/${sk}/members/${meB.id}`, { status: 'acquired' }), 200, 'joueur modifie sa compétence')
-expect(await member.put(`/skills/${sk}/members/${meB.id}`, { status: 'n_importe_quoi' }), 400, 'statut invalide refusé')
-const r = await admin.put(`/skills/${sk}/team`, { status: 'to_work' })
-ok(r.status === 200 && r.data.propagated === 2, 'équipe « à travailler » : propagé aux 2 joueurs')
-skills = (await member.get('/skills')).data
-ok(skills.memberStatus.filter((s) => s.skill_id === sk).every((s) => s.status === 'to_work'), 'tous les joueurs passent « à travailler »')
-await admin.put(`/skills/${sk}/team`, { status: 'acquired' })
-skills = (await member.get('/skills')).data
-ok(skills.memberStatus.filter((s) => s.skill_id === sk).every((s) => s.status === 'to_work'), "« acquis » d'équipe ne touche pas les joueurs")
+expect(await recrue.put(`/skills/${sk}/team`, { status: 'to_work', team_id: alpha }), 403, "joueur ne fixe pas le statut d'équipe")
+expect(await member.put(`/skills/${sk}/team`, { status: 'to_work', team_id: beta }), 403, "capitaine ne touche pas une autre équipe")
+const r = await member.put(`/skills/${sk}/team`, { status: 'to_work', team_id: alpha })
+ok(r.status === 200 && r.data.propagated === 2, 'capitaine : « à travailler » propagé aux 2 joueurs')
+skills = (await recrue.get(`/skills?team=${alpha}`)).data
+ok(skills.memberStatus.filter((x) => x.skill_id === sk).length === 2 && skills.memberStatus.filter((x) => x.skill_id === sk).every((x) => x.status === 'to_work'), 'tous les joueurs « à travailler »')
+ok(!skills.can_manage, 'joueur : lecture seule sur l’équipe')
+expect(await recrue.put(`/skills/${sk}/members/${meR.id}`, { status: 'acquired' }), 200, 'joueur modifie sa compétence')
+expect(await recrue.put(`/skills/${sk}/members/${meB.id}`, { status: 'acquired' }), 403, 'joueur ne modifie pas le capitaine')
+expect(await member.put(`/skills/${sk}/members/${meR.id}`, { status: 'not_worked' }), 200, 'capitaine modifie un joueur de son équipe')
+expect(await member.put(`/skills/${sk}/members/${meR.id}`, { status: 'n_importe_quoi' }), 400, 'statut invalide refusé')
+expect(await admin.put(`/skills/${sk}/team`, { status: 'to_work', team_id: alpha }), 200, 'coach (et admin) fixe le statut d’équipe')
+await member.put(`/skills/${sk}/team`, { status: 'acquired', team_id: alpha })
+skills = (await member.get(`/skills?team=${alpha}`)).data
+ok(skills.memberStatus.filter((x) => x.skill_id === sk).every((x) => x.status === 'to_work'), "« acquis » d'équipe ne touche pas les joueurs")
+const noTeam = (await new Client().get('/skills')).status
+ok(noTeam === 401, 'anonyme : compétences refusées')
 expect(await member.post('/tags/skills', { name: 'Hack' }), 403, 'membre ne crée pas de compétence')
 expect(await admin.post('/tags/skills', { name: 'Nouvelle compétence', group_id: skills.groups[0].id }), 200, 'admin crée une compétence')
+expect(await recrue.del(`/teams/${alpha}/members/${meR.id}`), 200, 'un joueur peut quitter son équipe')
+expect(await member.del(`/teams/${alpha}`), 403, 'capitaine ne supprime pas l’équipe')
+expect(await admin.del(`/teams/${beta}`), 200, 'admin supprime une équipe')
 
 // ------------------------------------------------------------ Liens de connexion
 const entry = (await admin.post('/allowlist', { note: 'Sans Discord' })).data.id

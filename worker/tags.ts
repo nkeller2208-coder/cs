@@ -121,5 +121,5 @@ tags.post('/:table/reorder', requireAdmin, async (c) => {
 })
 
 export async function listMembers(db: D1Database) {
-  return all(db, 'SELECT id, email, display_name, avatar_url, role, team_id, created_at FROM members ORDER BY display_name COLLATE NOCASE')
+  return all(db, 'SELECT id, email, display_name, avatar_url, role, created_at FROM members ORDER BY display_name COLLATE NOCASE')
 }

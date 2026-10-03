@@ -98,9 +98,26 @@ anti-CSRF exigé sur toute modification, droits vérifiés par l'API à chaque r
 
 Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
 
+### Équipes et rôles
+
+Menu **Équipes**. Le site peut accueillir plusieurs équipes ; un joueur peut appartenir à plusieurs équipes.
+
+| Rôle | Où | Droits |
+|---|---|---|
+| **Admin** | site | Tout : membres du site, listes d'étiquettes, création / suppression d'équipes, toutes les équipes |
+| **Capitaine** | équipe | Joue ; fixe les compétences de l'équipe ; modifie celles de ses joueurs ; invite, ajoute, retire des membres, nomme capitaines et coachs ; renomme l'équipe |
+| **Coach** | équipe | Comme un capitaine (sauf nommer un capitaine / coach), mais ne joue pas : pas de compétences personnelles |
+| **Joueur** | équipe | Consulte tout ; met à jour ses propres compétences ; peut quitter l'équipe |
+
+- L'admin crée une équipe et choisit son capitaine (Équipes → Nouvelle équipe).
+- Le capitaine **invite un nouveau joueur** (pseudo + ID Discord facultatif) : un lien de connexion personnel est
+  créé ; en l'ouvrant, le joueur accède au site et rejoint l'équipe. Il peut aussi **ajouter un membre du site**
+  déjà existant (par exemple un joueur d'une autre équipe).
+- Un capitaine ne peut pas se rétrograder s'il est le dernier à gérer l'équipe.
+
 ### Compétences
 
-Menu **Compétences**. Chaque compétence a trois statuts : **○ Non travaillé**, **◐ À travailler**, **● Acquis**.
+Menu **Compétences** (avec un sélecteur d'équipe si tu en as plusieurs). Chaque compétence a trois statuts : **○ Non travaillé**, **◐ À travailler**, **● Acquis**.
 
 - **À travailler** : la vue d'ensemble de tout ce qu'on travaille. Les objectifs d'équipe, avec la progression
   de chaque joueur, puis les objectifs individuels de chacun.
@@ -110,9 +127,9 @@ Menu **Compétences**. Chaque compétence a trois statuts : **○ Non travaillé
   les joueurs.
 - **Fiche joueur** : les compétences d'un joueur en trois colonnes, avec sa progression.
 
-Droits : l'admin fixe le statut d'équipe et peut tout modifier ; chaque joueur modifie ses propres statuts.
-La liste des compétences et leurs groupes se gèrent dans **Admin → Compétences** (ou « + Compétence »).
-Le modèle prévoit plusieurs équipes (table `teams`) ; une seule est utilisée pour l'instant.
+Droits : capitaines et coachs (et l'admin) fixent le statut d'équipe et peuvent modifier les joueurs de leur
+équipe ; chaque joueur modifie ses propres statuts. La liste des compétences est commune à toutes les équipes et
+se gère dans **Admin → Compétences** (ou « + Compétence »). Les statuts d'un joueur le suivent d'une équipe à l'autre.
 
 ---
 
@@ -138,6 +155,7 @@ cards ─< card_media · card_roles · card_categories · card_zones · card_uti
       ─< card_round_types · card_history
 principle_themes ─< principles ─< principle_maps · principle_roles · principle_categories
                                 ─< principle_round_types · principle_cards >─ cards
+teams ─< team_members (captain | coach | player) >─ members
 skill_groups ─< skills ─< team_skills (statut d'équipe) · member_skills (statut par joueur)
 ```
 
@@ -151,11 +169,11 @@ l'appliquent automatiquement.
 ```bash
 npm test          # tests unitaires (logique : médias, filtres, Markdown/XSS, formulaire, CSV, stats, principes, compétences)
 npm run typecheck
-npm run e2e       # base jetable + serveur local : 58 tests de droits de l'API puis scénario navigateur complet
+npm run e2e       # base jetable + serveur local : 78 tests de droits de l'API puis scénario navigateur complet
 ```
 
 `npm run e2e` utilise Playwright (`CHROMIUM_PATH` pour choisir le navigateur, `SHOTS` pour le dossier des captures).
 
 ## Hors périmètre V1
 
-Carte interactive de la map, favoris / playlists, commentaires, export PDF, plusieurs équipes dans l'interface.
+Carte interactive de la map, favoris / playlists, commentaires, export PDF, compétences propres à une équipe.

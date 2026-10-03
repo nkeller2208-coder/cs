@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMember } from '../hooks/auth'
 import { fetchSkills, insertTag, setMemberSkill, setTeamSkill, updateTag } from '../lib/api'
@@ -7,7 +7,7 @@ import { errorMessage } from '../lib/http'
 import {
   STATUS_ICON, STATUS_LABEL, STATUS_ORDER, groupSkills, indexSkills, memberCounts, playerCounts, toWorkOverview, type Counts,
 } from '../lib/skills'
-import type { Me, Skill, SkillsData, SkillStatus } from '../lib/types'
+import type { Me, Skill, SkillsData, SkillStatus, TeamRole } from '../lib/types'
 import { Button, EmptyState, Field, Modal, Spinner, cx, inputClass } from '../components/ui'
 import { useToast } from '../components/toast'
 
@@ -22,15 +22,19 @@ const BAR: Record<SkillStatus, string> = { not_worked: '#475569', to_work: '#f59
 
 type Player = SkillsData['players'][number]
 const playerName = (p: Pick<Player, 'display_name' | 'email'>) => p.display_name || p.email || 'Joueur'
+export const TEAM_ROLE_LABEL: Record<TeamRole, string> = { captain: 'Capitaine', coach: 'Coach', player: 'Joueur' }
 
 // ================================================================ Page
 
 export default function SkillsPage() {
   const me = useMember()
-  const q = useQuery({ queryKey: skillsKey, queryFn: fetchSkills })
   const [params, setParams] = useSearchParams()
+  const teamParam = Number(params.get('equipe') ?? 0) || null
+  const key = [...skillsKey, teamParam ?? 0]
+  const q = useQuery({ queryKey: key, queryFn: () => fetchSkills(teamParam) })
   const tab = (params.get('vue') ?? 'travail') as 'travail' | 'matrice' | 'joueur'
-  const setTab = (v: string, extra: Record<string, string> = {}) => setParams({ vue: v, ...extra }, { replace: true })
+  const setTab = (v: string, extra: Record<string, string> = {}) =>
+    setParams({ vue: v, ...(teamParam ? { equipe: String(teamParam) } : {}), ...extra }, { replace: true })
 
   if (q.isLoading) {
     return (
@@ -41,6 +45,16 @@ export default function SkillsPage() {
   }
   if (q.error || !q.data) return <EmptyState title="Impossible de charger les compétences">{errorMessage(q.error)}</EmptyState>
   const data = q.data
+  if (!data.team) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <EmptyState title="Tu n'es dans aucune équipe">
+          Demande à un capitaine de t'ajouter, ou va dans <Link to="/equipes" className="text-amber-400">Équipes</Link>.
+        </EmptyState>
+      </div>
+    )
+  }
+  const team = data.team
 
   const tabs: [typeof tab, string][] = [
     ['travail', 'À travailler'],
@@ -52,10 +66,29 @@ export default function SkillsPage() {
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Compétences · {data.team.name}</h1>
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold">
+            Compétences ·{' '}
+            {data.teams.length > 1 ? (
+              <select
+                value={team.id}
+                onChange={(e) => setParams({ vue: tab, equipe: e.target.value }, { replace: true })}
+                className={cx(inputClass, 'w-auto! py-1 text-lg font-bold')}
+                aria-label="Équipe"
+              >
+                {data.teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              team.name
+            )}
+            {data.my_role && <span className="rounded-md bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">{TEAM_ROLE_LABEL[data.my_role]}</span>}
+          </h1>
           <p className="text-sm text-slate-400">
-            Trois statuts : {STATUS_ORDER.map((s) => `${STATUS_ICON[s]} ${STATUS_LABEL[s]}`).join(' · ')}. Une compétence passée « à travailler » pour
-            l'équipe passe « à travailler » chez tous les joueurs.
+            Trois statuts : {STATUS_ORDER.map((s) => `${STATUS_ICON[s]} ${STATUS_LABEL[s]}`).join(' · ')}. Quand le capitaine passe une compétence « à
+            travailler » pour l'équipe, elle passe « à travailler » chez tous les joueurs.
           </p>
         </div>
         {me.role === 'admin' && <NewSkillButton data={data} />}
@@ -82,11 +115,11 @@ export default function SkillsPage() {
       {data.skills.filter((s) => !s.archived).length === 0 ? (
         <EmptyState title="Aucune compétence">{me.role === 'admin' ? 'Ajoute la première avec « + Compétence ».' : "L'admin n'a pas encore défini de compétences."}</EmptyState>
       ) : tab === 'travail' ? (
-        <ToWorkView data={data} me={me} onOpenPlayer={(id) => setTab('joueur', { joueur: id })} />
+        <ToWorkView data={data} me={me} queryKey={key} onOpenPlayer={(id) => setTab('joueur', { joueur: id })} />
       ) : tab === 'matrice' ? (
-        <MatrixView data={data} me={me} />
+        <MatrixView data={data} me={me} queryKey={key} />
       ) : (
-        <PlayerView data={data} me={me} playerId={params.get('joueur') ?? me.id} onPick={(id) => setTab('joueur', { joueur: id })} />
+        <PlayerView data={data} me={me} queryKey={key} playerId={params.get('joueur') ?? me.id} onPick={(id) => setTab('joueur', { joueur: id })} />
       )}
     </div>
   )
@@ -94,17 +127,17 @@ export default function SkillsPage() {
 
 // ================================================================ Mutations
 
-function useSkillMutations() {
+function useSkillMutations(key: readonly unknown[], teamId: number) {
   const qc = useQueryClient()
   const toast = useToast()
   const onError = (e: unknown) => toast(errorMessage(e), 'error')
   const refresh = () => qc.invalidateQueries({ queryKey: skillsKey })
 
   /** Mise à jour optimiste : le changement s'affiche tout de suite. */
-  const patch = (fn: (d: SkillsData) => SkillsData) => qc.setQueryData<SkillsData>(skillsKey, (d) => (d ? fn(d) : d))
+  const patch = (fn: (d: SkillsData) => SkillsData) => qc.setQueryData<SkillsData>(key, (d) => (d ? fn(d) : d))
 
   const team = useMutation({
-    mutationFn: ({ skillId, status }: { skillId: number; status: SkillStatus }) => setTeamSkill(skillId, status),
+    mutationFn: ({ skillId, status }: { skillId: number; status: SkillStatus }) => setTeamSkill(skillId, teamId, status),
     onMutate: ({ skillId, status }) =>
       patch((d) => ({
         ...d,
@@ -242,14 +275,23 @@ function Avatar({ p, size = 'size-7' }: { p: Pick<Player, 'avatar_url' | 'displa
   )
 }
 
-const canEditPlayer = (me: Me, playerId: string) => me.role === 'admin' || me.id === playerId
+/** Le joueur lui-même, ou un capitaine / coach de l'équipe (ou l'admin). */
+const canEditPlayer = (data: SkillsData, me: Me, playerId: string) => data.can_manage || me.id === playerId
+
+function RoleTag({ role }: { role: TeamRole }) {
+  return role === 'captain' ? (
+    <span title="Capitaine" className="rounded bg-amber-500/20 px-1 text-[10px] font-bold text-amber-300">
+      C
+    </span>
+  ) : null
+}
 
 // ================================================================ Vue « À travailler »
 
-function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOpenPlayer: (id: string) => void }) {
+function ToWorkView({ data, me, queryKey, onOpenPlayer }: { data: SkillsData; me: Me; queryKey: readonly unknown[]; onOpenPlayer: (id: string) => void }) {
   const { team, individual } = useMemo(() => toWorkOverview(data), [data])
   const ix = useMemo(() => indexSkills(data), [data])
-  const m = useSkillMutations()
+  const m = useSkillMutations(queryKey, data.team!.id)
   const groupName = (s: Skill) => data.groups.find((g) => g.id === s.group_id)?.name
 
   return (
@@ -261,7 +303,7 @@ function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOp
         {team.length === 0 ? (
           <p className="text-sm text-slate-500">
             Aucun objectif d'équipe.{' '}
-            {me.role === 'admin' ? 'Dans « Équipe & joueurs », passe une compétence « à travailler » dans la colonne Équipe.' : ''}
+            {data.can_manage ? 'Dans « Équipe & joueurs », passe une compétence « à travailler » dans la colonne Équipe.' : 'Le capitaine fixe les objectifs de l’équipe.'}
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -275,7 +317,7 @@ function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOp
                   </div>
                   <StatusControl
                     status="to_work"
-                    editable={me.role === 'admin'}
+                    editable={data.can_manage}
                     label={`${skill.name} (équipe)`}
                     onChange={(status) => m.team.mutate({ skillId: skill.id, status })}
                   />
@@ -291,7 +333,7 @@ function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOp
                         <StatusControl
                           compact
                           status={s}
-                          editable={canEditPlayer(me, p.id)}
+                          editable={canEditPlayer(data, me, p.id)}
                           label={`${skill.name} · ${playerName(p)}`}
                           onChange={(status) => m.member.mutate({ skillId: skill.id, memberId: p.id, status })}
                         />
@@ -326,7 +368,7 @@ function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOp
                       <StatusControl
                         compact
                         status="to_work"
-                        editable={canEditPlayer(me, player.id)}
+                        editable={canEditPlayer(data, me, player.id)}
                         label={`${s.name} · ${playerName(player)}`}
                         onChange={(status) => m.member.mutate({ skillId: s.id, memberId: player.id, status })}
                       />
@@ -344,10 +386,10 @@ function ToWorkView({ data, me, onOpenPlayer }: { data: SkillsData; me: Me; onOp
 
 // ================================================================ Matrice équipe × joueurs
 
-function MatrixView({ data, me }: { data: SkillsData; me: Me }) {
+function MatrixView({ data, me, queryKey }: { data: SkillsData; me: Me; queryKey: readonly unknown[] }) {
   const ix = useMemo(() => indexSkills(data), [data])
   const groups = useMemo(() => groupSkills(data), [data])
-  const m = useSkillMutations()
+  const m = useSkillMutations(queryKey, data.team!.id)
   const n = data.players.length
 
   return (
@@ -362,7 +404,10 @@ function MatrixView({ data, me }: { data: SkillsData; me: Me }) {
               <th key={p.id} className="px-2 py-2 text-center font-medium">
                 <span className="inline-flex flex-col items-center gap-1">
                   <Avatar p={p} size="size-6" />
-                  <span className="max-w-20 truncate">{playerName(p)}</span>
+                  <span className="flex max-w-24 items-center gap-1 truncate">
+                    {playerName(p)}
+                    <RoleTag role={p.team_role} />
+                  </span>
                 </span>
               </th>
             ))}
@@ -386,7 +431,7 @@ function MatrixView({ data, me }: { data: SkillsData; me: Me }) {
                   <td className="bg-amber-500/5 px-2 py-2 text-center">
                     <StatusControl
                       status={ix.teamStatus(s.id)}
-                      editable={me.role === 'admin'}
+                      editable={data.can_manage}
                       label={`${s.name} (équipe)`}
                       confirmToWork={`Passer « ${s.name} » à travailler pour l'équipe ?\n\nTous les joueurs (${n}) passeront « à travailler » sur cette compétence.`}
                       onChange={(status) => m.team.mutate({ skillId: s.id, status })}
@@ -400,7 +445,7 @@ function MatrixView({ data, me }: { data: SkillsData; me: Me }) {
                       <StatusControl
                         compact
                         status={ix.memberStatus(p.id, s.id)}
-                        editable={canEditPlayer(me, p.id)}
+                        editable={canEditPlayer(data, me, p.id)}
                         label={`${s.name} · ${playerName(p)}`}
                         onChange={(status) => m.member.mutate({ skillId: s.id, memberId: p.id, status })}
                       />
@@ -418,14 +463,14 @@ function MatrixView({ data, me }: { data: SkillsData; me: Me }) {
 
 // ================================================================ Fiche joueur
 
-function PlayerView({ data, me, playerId, onPick }: { data: SkillsData; me: Me; playerId: string; onPick: (id: string) => void }) {
+function PlayerView({ data, me, queryKey, playerId, onPick }: { data: SkillsData; me: Me; queryKey: readonly unknown[]; playerId: string; onPick: (id: string) => void }) {
   const ix = useMemo(() => indexSkills(data), [data])
-  const m = useSkillMutations()
+  const m = useSkillMutations(queryKey, data.team!.id)
   const player = data.players.find((p) => p.id === playerId) ?? data.players.find((p) => p.id === me.id) ?? data.players[0]
-  if (!player) return <EmptyState title="Aucun joueur dans l'équipe" />
+  if (!player) return <EmptyState title="Aucun joueur dans l'équipe">Ajoute des joueurs depuis la page <Link to="/equipes" className="text-amber-400">Équipes</Link>.</EmptyState>
   const counts = memberCounts(data, player.id)
   const total = counts.acquired + counts.to_work + counts.not_worked
-  const editable = canEditPlayer(me, player.id)
+  const editable = canEditPlayer(data, me, player.id)
   const groupName = (s: Skill) => data.groups.find((g) => g.id === s.group_id)?.name
 
   return (
@@ -436,6 +481,7 @@ function PlayerView({ data, me, playerId, onPick }: { data: SkillsData; me: Me; 
           {data.players.map((p) => (
             <option key={p.id} value={p.id}>
               {playerName(p)}
+              {p.team_role === 'captain' ? ' · capitaine' : ''}
               {p.id === me.id ? ' (toi)' : ''}
             </option>
           ))}
@@ -444,7 +490,7 @@ function PlayerView({ data, me, playerId, onPick }: { data: SkillsData; me: Me; 
           <ProgressBar counts={counts} total={total} />
         </div>
       </div>
-      {!editable && <p className="text-sm text-slate-500">Lecture seule : chaque joueur met à jour ses propres compétences (l'admin peut tout modifier).</p>}
+      {!editable && <p className="text-sm text-slate-500">Lecture seule : chaque joueur met à jour ses propres compétences ; les capitaines et coachs peuvent modifier celles de leur équipe.</p>}
 
       <div className="grid gap-4 md:grid-cols-3">
         {(['to_work', 'not_worked', 'acquired'] as SkillStatus[]).map((status) => {

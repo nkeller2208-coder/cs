@@ -39,11 +39,14 @@ export function Layout() {
             <NavLink to="/" end className={nav}>
               Cartes
             </NavLink>
-            <NavLink to="/principes" className={nav}>
+            <NavLink to="/principes" className={({ isActive }) => cx(nav({ isActive }), 'max-sm:hidden')}>
               Principes
             </NavLink>
             <NavLink to="/competences" className={nav}>
               Compétences
+            </NavLink>
+            <NavLink to="/equipes" className={nav}>
+              Équipes
             </NavLink>
             <NavLink to="/stats" className={({ isActive }) => cx(nav({ isActive }), 'max-md:hidden')}>
               Tableau de bord
@@ -92,6 +95,9 @@ export function Layout() {
                     {me.role === 'admin' ? 'Admin' : 'Membre'} · {me.email}
                   </p>
                   {/* Liens repliés ici sur petit écran */}
+                  <Link to="/principes" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800 sm:hidden">
+                    Principes
+                  </Link>
                   <Link to="/stats" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800 md:hidden">
                     Tableau de bord
                   </Link>

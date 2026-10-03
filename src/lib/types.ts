@@ -141,13 +141,52 @@ export interface SkillState {
   updated_at: string
 }
 
+export type TeamRole = 'captain' | 'coach' | 'player'
+
 export interface SkillsData {
-  team: { id: number; name: string }
+  /** Équipes accessibles (les siennes ; toutes pour l'admin). */
+  teams: { id: number; name: string }[]
+  /** Équipe affichée (null : l'utilisateur n'est dans aucune équipe). */
+  team: { id: number; name: string } | null
+  my_role: TeamRole | null
+  /** Capitaine, coach ou admin : peut fixer le statut d'équipe et modifier les joueurs. */
+  can_manage: boolean
   groups: Tag[]
   skills: Skill[]
   teamStatus: SkillState[]
   memberStatus: (SkillState & { member_id: string })[]
-  players: Pick<Member, 'id' | 'display_name' | 'email' | 'avatar_url' | 'role'>[]
+  /** Capitaines et joueurs (les coachs n'ont pas de compétences). */
+  players: (Pick<Member, 'id' | 'display_name' | 'email' | 'avatar_url'> & { team_role: TeamRole })[]
+}
+
+export interface TeamMember {
+  team_id: number
+  member_id: string
+  role: TeamRole
+  joined_at: string
+  display_name: string
+  avatar_url: string | null
+  email: string | null
+}
+
+export interface TeamInvite {
+  id: number
+  team_id: number
+  team_role: TeamRole
+  note: string | null
+  email: string | null
+  discord_id: string | null
+  invite_expires_at: string | null
+  created_at: string
+}
+
+export interface Team {
+  id: number
+  name: string
+  created_at: string
+  can_manage: boolean
+  members: TeamMember[]
+  invites: TeamInvite[]
 }
 
 export interface LastValues {
