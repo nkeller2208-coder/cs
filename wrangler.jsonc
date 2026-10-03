@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cs2-playbook",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Le site (dossier dist/) est servi par le même Worker ; toute URL inconnue renvoie index.html.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cs2-playbook",
+      // Pas d'identifiant : Cloudflare crée la base au premier déploiement et la réutilise ensuite.
+      // Les migrations sont appliquées par le Worker lui-même (worker/migrate.ts).
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+}
