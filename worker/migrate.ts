@@ -4,8 +4,11 @@
  * un déploiement suffit.
  *
  * Compatible avec `wrangler d1 migrations apply` : même table de suivi (d1_migrations).
+ * Chaque instruction est rendue rejouable (IF NOT EXISTS, INSERT OR IGNORE) : une mise à jour
+ * interrompue reprend là où elle s’est arrêtée.
  */
 
+import { idempotent } from './idempotent'
 import { splitSql } from './sql-split'
 
 // Le contenu des fichiers SQL est intégré au Worker au moment de la construction.
@@ -32,16 +35,17 @@ async function migrate(db: D1Database) {
   const done = new Set((await db.prepare('SELECT name FROM d1_migrations').all<{ name: string }>()).results.map((r) => r.name))
   for (const m of MIGRATIONS) {
     if (done.has(m.name)) continue
-    // Une migration = une transaction. L'insertion du nom en premier sert de verrou : si un autre
-    // serveur l'applique en même temps, le nom existe déjà et tout ce lot est annulé.
-    try {
-      await db.batch([
-        db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').bind(m.name),
-        ...splitSql(m.sql).map((s) => db.prepare(s)),
-      ])
-    } catch (e) {
-      const applied = await db.prepare('SELECT 1 FROM d1_migrations WHERE name = ?').bind(m.name).first()
-      if (!applied) throw e
+    // Instruction par instruction, chacune rejouable : si un autre serveur applique la même
+    // migration en même temps, ou si une tentative précédente a été interrompue, rien ne casse.
+    for (const stmt of splitSql(m.sql)) {
+      try {
+        await db.prepare(idempotent(stmt)).run()
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e)
+        if (/^ALTER TABLE/i.test(stmt) && /duplicate column/i.test(msg)) continue // colonne déjà ajoutée
+        throw new Error(`Migration ${m.name} : ${msg} — instruction : ${stmt.slice(0, 120)}`)
+      }
     }
+    await db.prepare('INSERT OR IGNORE INTO d1_migrations (name) VALUES (?)').bind(m.name).run()
   }
 }
