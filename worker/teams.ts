@@ -32,7 +32,7 @@ async function makeLink(db: D1Database, entryId: number, url: string) {
   const token = randomToken()
   const expires = new Date(Date.now() + INVITE_DAYS * 86_400_000).toISOString()
   await db.prepare('UPDATE allowlist SET invite_hash = ?, invite_expires_at = ? WHERE id = ?').bind(await sha256(token), expires, entryId).run()
-  return { url: new URL(`/api/auth/invite/${token}`, url).toString(), expires_at: expires }
+  return { url: new URL(`/inscription/${token}`, url).toString(), expires_at: expires }
 }
 
 export const teams = new Hono<AppEnv>()
@@ -46,7 +46,7 @@ teams.get('/', async (c) => {
     db.prepare(`SELECT tm.team_id, tm.member_id, tm.role, tm.joined_at, m.display_name, m.avatar_url, m.email
                   FROM team_members tm JOIN members m ON m.id = tm.member_id
                  ORDER BY CASE tm.role WHEN 'captain' THEN 0 WHEN 'coach' THEN 1 ELSE 2 END, m.display_name COLLATE NOCASE`),
-    db.prepare(`SELECT a.id, a.team_id, a.team_role, a.note, a.email, a.discord_id, a.invite_expires_at, a.created_at
+    db.prepare(`SELECT a.id, a.team_id, a.team_role, a.note, a.email, a.invite_expires_at, a.created_at
                   FROM allowlist a LEFT JOIN members m ON m.allowlist_id = a.id
                  WHERE a.team_id IS NOT NULL AND m.id IS NULL`),
   ])
@@ -121,29 +121,27 @@ teams.delete('/:id/members/:memberId', async (c) => {
 
 /**
  * Inviter un nouveau joueur dans l'équipe : il est ajouté à la liste blanche du site et
- * rejoint l'équipe à sa première connexion. Renvoie son lien de connexion personnel.
- * S'il est déjà membre du site (même ID Discord / email), il est ajouté directement.
+ * rejoint l'équipe en s'inscrivant. Renvoie son lien d'inscription.
+ * S'il est déjà membre du site (même email), il est ajouté directement.
  */
 teams.post('/:id/invites', async (c) => {
   const db = c.env.DB
   const me = c.get('me')
   const id = Number(c.req.param('id'))
   await requireManager(db, id, me)
-  const b = await c.req.json<{ note?: string; email?: string; discord_id?: string; role?: string }>()
+  const b = await c.req.json<{ note?: string; email?: string; role?: string }>()
   const r = role(b.role ?? 'player')
   if (r !== 'player' && me.role !== 'admin' && (await teamRole(db, id, me.id)) !== 'captain') fail(403, 'Seul un capitaine peut nommer un capitaine ou un coach')
   const note = b.note?.trim().slice(0, 60) || null
   const email = b.email?.trim().toLowerCase() || null
-  const discord = b.discord_id?.trim() || null
-  if (!note && !email && !discord) fail(400, 'Indique au moins un pseudo')
+  if (!note && !email) fail(400, 'Indique au moins un pseudo')
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'Email invalide')
-  if (discord && !/^\d{15,21}$/.test(discord)) fail(400, 'Identifiant Discord invalide (15 à 21 chiffres)')
 
   const existing = await first<{ id: number; member_id: string | null }>(
     db,
     `SELECT a.id, m.id AS member_id FROM allowlist a LEFT JOIN members m ON m.allowlist_id = a.id
-      WHERE (? IS NOT NULL AND a.email = ? COLLATE NOCASE) OR (? IS NOT NULL AND a.discord_id = ?) LIMIT 1`,
-    email, email, discord, discord,
+      WHERE ? IS NOT NULL AND a.email = ? COLLATE NOCASE LIMIT 1`,
+    email, email,
   )
   if (existing?.member_id) {
     await db.prepare(`INSERT INTO team_members (team_id, member_id, role, added_by) VALUES (?, ?, ?, ?)
@@ -155,8 +153,8 @@ teams.post('/:id/invites', async (c) => {
     await db.prepare('UPDATE allowlist SET team_id = ?, team_role = ?, note = COALESCE(?, note) WHERE id = ?').bind(id, r, note, entryId).run()
   } else {
     const row = await first<{ id: number }>(db,
-      "INSERT INTO allowlist (email, discord_id, note, role, team_id, team_role, invited_by) VALUES (?, ?, ?, 'member', ?, ?, ?) RETURNING id",
-      email, discord, note, id, r, me.id).catch(sqlError)
+      "INSERT INTO allowlist (email, note, role, team_id, team_role, invited_by) VALUES (?, ?, 'member', ?, ?, ?) RETURNING id",
+      email, note, id, r, me.id).catch(sqlError)
     entryId = row!.id
   }
   return c.json({ added: false, entry_id: entryId, ...(await makeLink(db, entryId, c.req.url)) })

@@ -44,7 +44,6 @@ app.get('/health', async (c) => {
       migrations,
       admins_connected: admin?.connected ?? 0,
       admin_links_active: admin?.active_links ?? 0,
-      discord: !!(c.env.DISCORD_CLIENT_ID && c.env.DISCORD_CLIENT_SECRET),
     })
   } catch (e) {
     return c.json({ ok: false, error: String((e as Error)?.message ?? e) }, 500)

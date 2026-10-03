@@ -18,16 +18,16 @@ npm install
 npm run dev
 ```
 
-Au premier lancement, le terminal affiche un **lien de connexion admin** :
+Au premier lancement, le terminal affiche un **lien d'inscription admin** :
 
 ```
 ═══════════════════════════════════════════════════════
-  Premier lancement : ouvre ce lien pour te connecter en admin
-  http://localhost:5173/api/auth/invite/xxxxxxxx
+  Premier lancement : ouvre ce lien pour créer ton compte admin
+  http://localhost:5173/inscription/xxxxxxxx
 ═══════════════════════════════════════════════════════
 ```
 
-Ouvre-le : tu es connecté en admin. Pour charger des données de test : **Admin → Démo**.
+Ouvre-le, choisis ton email et ton mot de passe : tu es connecté en admin. Pour charger des données de test : **Admin → Démo**.
 Besoin d'un nouveau lien plus tard : `npm run admin-link`.
 
 > Sous Windows, si PowerShell bloque `npm` (« l'exécution de scripts est désactivée »), lance une fois
@@ -48,12 +48,15 @@ automatiquement** (1 à 2 minutes). Aucune commande n'est nécessaire.
    - **Build command** : `npm run build` ;
    - **Deploy command** : `npx wrangler deploy` ;
    - **Production branch** : `main`.
-4. **Create and deploy**. Au premier déploiement, Cloudflare crée la base D1 ; le site crée ses tables à la
-   première visite. L'adresse s'affiche : `https://cs2-playbook.<ton-sous-domaine>.workers.dev`.
+4. **Create and deploy**. Le site est relié à la base D1 indiquée dans `wrangler.jsonc` (`cs2-playbook-v2`,
+   identifiant fixe) et crée ses tables tout seul à la première visite. L'adresse s'affiche :
+   `https://cs2-playbook.<ton-sous-domaine>.workers.dev`.
    (Si Cloudflare demande de choisir un sous-domaine `workers.dev`, choisis-en un.)
-5. Connecte-toi en admin avec le lien de premier accès :
-   `https://cs2-playbook.<ton-sous-domaine>.workers.dev/api/auth/invite/<jeton>` (jeton transmis à part,
-   valable jusqu'au 2 novembre 2026 ; voir `migrations/0005_first_admin.sql`).
+5. Lien d'inscription admin (choix de l'email et du mot de passe) :
+   `npm run admin-link -- --remote https://cs2-playbook.<ton-sous-domaine>.workers.dev`.
+
+Site actuel : **https://cs2-playbook.cs2-kb.workers.dev** (Worker `cs2-playbook`, base `cs2-playbook-v2`).
+L'ancienne base `cs2-playbook` (schéma de la version précédente) n'est plus utilisée et peut être supprimée.
 
 Alternative depuis un PC : `npm run deploy` (connexion à Cloudflare dans le navigateur, puis construction et déploiement).
 
@@ -70,29 +73,29 @@ Alternative depuis un PC : `npm run deploy` (connexion à Cloudflare dans le nav
 
 Ajouter une table ou une colonne : crée `migrations/000X_nom.sql` ; le site l'applique tout seul après le déploiement.
 
-Sauvegarde de la base : Cloudflare → **Storage & Databases** → **D1** → `cs2-playbook` → **Time Travel** (retour
-dans le temps jusqu'à 30 jours, inclus dans l'offre gratuite), ou `npx wrangler d1 export cs2-playbook --remote --output sauvegarde.sql`.
+Sauvegarde de la base : Cloudflare → **Storage & Databases** → **D1** → `cs2-playbook-v2` → **Time Travel** (retour
+dans le temps jusqu'à 30 jours, inclus dans l'offre gratuite), ou `npx wrangler d1 export cs2-playbook-v2 --remote --output sauvegarde.sql`.
 
 ## Connexion
 
 Aucune page n'est visible sans connexion. Seules les personnes de la **liste blanche** (Admin → Membres) entrent.
 
-- **Lien de connexion personnel** (fonctionne sans rien configurer) : dans Admin → Membres, saisis un pseudo
-  puis « Inviter » : un lien est généré, à envoyer à la personne en message privé. Il est valable 7 jours, sur
-  plusieurs appareils ; en générer un nouveau remplace l'ancien. Une session dure 30 jours.
-- **Discord** (optionnel, recommandé) : chacun se connecte avec son compte Discord.
-  1. [discord.com/developers/applications](https://discord.com/developers/applications) → *New Application* → onglet **OAuth2**.
-  2. *Redirects* → ajoute `https://<ton-site>/api/auth/callback` (et `http://localhost:5173/api/auth/callback` pour le local).
-  3. Copie le *Client ID* et le *Client Secret* (*Reset Secret*).
-  4. En ligne : `npx wrangler secret put DISCORD_CLIENT_ID` puis `npx wrangler secret put DISCORD_CLIENT_SECRET`
-     (ou tableau de bord Cloudflare → ton Worker → *Settings* → *Variables and Secrets*).
-     En local : copie `.dev.vars.example` en `.dev.vars` et remplis-le.
-  5. Ajoute chaque joueur dans Admin → Membres avec son **identifiant Discord** (Paramètres Discord → Avancés →
-     Mode développeur, puis clic droit sur le profil → *Copier l'identifiant*). Une personne non autorisée qui
-     tente de se connecter voit son identifiant s'afficher, à transmettre à l'admin.
+1. **Inviter** : dans Admin → Membres (ou Équipes → « Inviter un nouveau joueur » pour un capitaine), saisis un
+   pseudo (et l'email si tu le connais) puis « Inviter ». Un **lien d'inscription** est généré : envoie-le à la
+   personne en message privé.
+2. **S'inscrire** : en ouvrant le lien, la personne choisit son pseudo, son **email** et son **mot de passe**
+   (8 caractères minimum). Le lien ne sert **qu'une fois** et expire au bout de 7 jours ; en générer un nouveau
+   remplace l'ancien. Ouvrir le lien ne le consomme pas (seul l'envoi du formulaire l'utilise).
+3. **Se connecter** ensuite, sur n'importe quel appareil : email + mot de passe sur la page d'accueil.
+   Une session dure 30 jours.
 
-Sécurité : cookie de session `HttpOnly` / `Secure` / `SameSite=Lax`, jetons stockés hachés (SHA-256), en-tête
-anti-CSRF exigé sur toute modification, droits vérifiés par l'API à chaque requête, en-têtes CSP/anti-iframe/noindex.
+**Mot de passe oublié** : dans Admin → Membres → Liste blanche, « 🔑 Lien nouveau mot de passe » sur la personne.
+Le lien lui permet d'en choisir un nouveau ; ses autres appareils sont déconnectés.
+
+Sécurité : mots de passe hachés (PBKDF2-SHA256, 100 000 itérations, sel aléatoire), compte bloqué 15 minutes
+après 5 mots de passe erronés, message d'erreur identique que l'email existe ou non, cookie de session `HttpOnly` /
+`Secure` / `SameSite=Lax`, jetons stockés hachés (SHA-256), en-tête anti-CSRF exigé sur toute modification,
+droits vérifiés par l'API à chaque requête, en-têtes CSP/anti-iframe/noindex.
 
 ---
 
@@ -100,7 +103,7 @@ anti-CSRF exigé sur toute modification, droits vérifiés par l'API à chaque r
 
 | Fonctionnalité | Où |
 |---|---|
-| Connexion (Discord, lien personnel), liste blanche, rôles Admin / Membre | `worker/auth.ts`, `worker/admin.ts`, `src/pages/LoginPage.tsx` |
+| Inscription par lien (usage unique), connexion email + mot de passe, liste blanche, rôles Admin / Membre | `worker/auth.ts`, `worker/password.ts`, `worker/admin.ts`, `src/pages/LoginPage.tsx`, `src/pages/RegisterPage.tsx` |
 | Grille responsive, badges colorés (CT bleu, T orange, risque vert → rouge) | `src/components/CardTile.tsx` |
 | Vue détaillée en modale, URL `/c/:id` partageable, carte précédente / suivante | `src/pages/CardDetail.tsx` |
 | Filtres ET entre familles / OU dans une famille, compteurs, filtres conditionnels, recherche, tri, filtres dans l'URL | `src/lib/filters.ts`, `src/components/FilterPanel.tsx` |
@@ -130,8 +133,8 @@ Menu **Équipes**. Le site peut accueillir plusieurs équipes ; un joueur peut a
 | **Joueur** | équipe | Consulte tout ; met à jour ses propres compétences ; peut quitter l'équipe |
 
 - L'admin crée une équipe et choisit son capitaine (Équipes → Nouvelle équipe).
-- Le capitaine **invite un nouveau joueur** (pseudo + ID Discord facultatif) : un lien de connexion personnel est
-  créé ; en l'ouvrant, le joueur accède au site et rejoint l'équipe. Il peut aussi **ajouter un membre du site**
+- Le capitaine **invite un nouveau joueur** (pseudo + email facultatif) : un lien d'inscription est créé ; le
+  joueur y choisit son email et son mot de passe, puis rejoint l'équipe. Il peut aussi **ajouter un membre du site**
   déjà existant (par exemple un joueur d'une autre équipe).
 - Un capitaine ne peut pas se rétrograder s'il est le dernier à gérer l'équipe.
 
@@ -169,7 +172,7 @@ de taille…). En local, le plugin Cloudflare pour Vite exécute le même Worker
 ### Modèle de données (`migrations/`)
 
 ```
-allowlist ─ members (role, team_id) ─ sessions          teams
+allowlist (lien d'inscription) ─ members (role, mot de passe haché) ─ sessions          teams
 maps ─< zones   roles (CT/T)   categories   risks   utilities   economies   round_types
 cards ─< card_media · card_roles · card_categories · card_zones · card_utilities · card_economies
       ─< card_round_types · card_history

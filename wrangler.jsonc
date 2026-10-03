@@ -12,9 +12,12 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "cs2-playbook",
-      // Pas d'identifiant : Cloudflare crée la base au premier déploiement et la réutilise ensuite.
+      // Identifiant fixe : le site reste relié à cette base à chaque déploiement (GitHub ou npm run deploy).
+      // Ne pas l'enlever : sans lui, Cloudflare relierait la base par son nom, au risque de prendre la mauvaise.
+      // (« cs2-playbook » est l'ancienne base de la version précédente, avec un schéma incompatible.)
       // Les migrations sont appliquées par le Worker lui-même (worker/migrate.ts).
+      "database_name": "cs2-playbook-v2",
+      "database_id": "0e729fd7-f6ff-46a4-bc0b-78bd6f4e8b58",
       "migrations_dir": "migrations"
     }
   ],

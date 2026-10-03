@@ -125,7 +125,7 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
   const [name, setName] = useState(team.name)
   const [addId, setAddId] = useState('')
   const [addRole, setAddRole] = useState<TeamRole>('player')
-  const [invite, setInvite] = useState({ note: '', discord_id: '', role: 'player' as TeamRole })
+  const [invite, setInvite] = useState({ note: '', email: '', role: 'player' as TeamRole })
   const manage = team.can_manage
   const myRole = team.members.find((m) => m.member_id === me.id)?.role
   const canNameCaptain = me.role === 'admin' || myRole === 'captain'
@@ -143,11 +143,11 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
     onError,
   })
   const sendInvite = useMutation({
-    mutationFn: () => inviteToTeam(team.id, { note: invite.note.trim(), discord_id: invite.discord_id.trim() || undefined, role: invite.role }),
+    mutationFn: () => inviteToTeam(team.id, { note: invite.note.trim(), email: invite.email.trim() || undefined, role: invite.role }),
     onSuccess: (r) => {
       if (r.added) toast('Déjà membre du site : ajouté directement à l’équipe')
       else if (r.url) setLink({ url: r.url, expires_at: r.expires_at!, who: invite.note.trim() })
-      setInvite({ note: '', discord_id: '', role: 'player' })
+      setInvite({ note: '', email: '', role: 'player' })
       refresh()
     },
     onError,
@@ -163,7 +163,7 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
   const cancel = useMutation({ mutationFn: (id: number) => cancelTeamInvite(team.id, id), onSuccess: refresh, onError })
 
   const notInTeam = allMembers.filter((m) => !team.members.some((t) => t.member_id === m.id))
-  const validInvite = !!invite.note.trim() && (!invite.discord_id.trim() || /^\d{15,21}$/.test(invite.discord_id.trim()))
+  const validInvite = !!invite.note.trim() && (!invite.email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(invite.email.trim()))
 
   return (
     <article className="space-y-4 rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800 sm:p-5">
@@ -262,7 +262,7 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
             className="space-y-2 rounded-xl bg-slate-950/50 p-3 ring-1 ring-slate-800"
           >
             <p className="text-sm font-semibold">Inviter un nouveau joueur</p>
-            <p className="text-xs text-slate-500">Un lien de connexion personnel est créé : envoie-le lui. Il rejoint l'équipe en l'ouvrant.</p>
+            <p className="text-xs text-slate-500">Un lien d'inscription à usage unique est créé : envoie-le lui. Il y choisit son email et son mot de passe, et rejoint l'équipe.</p>
             <div className="flex flex-wrap gap-2">
               <input value={invite.note} onChange={(e) => setInvite({ ...invite, note: e.target.value })} placeholder="Pseudo" maxLength={60} className={cx(inputClass, 'min-w-32 flex-1')} aria-label="Pseudo du joueur invité" />
               <select value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value as TeamRole })} className={cx(inputClass, 'w-auto!')} aria-label="Rôle du joueur invité">
@@ -274,11 +274,12 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
               </select>
             </div>
             <input
-              value={invite.discord_id}
-              onChange={(e) => setInvite({ ...invite, discord_id: e.target.value })}
-              placeholder="ID Discord (optionnel : permet aussi la connexion Discord)"
+              type="email"
+              value={invite.email}
+              onChange={(e) => setInvite({ ...invite, email: e.target.value })}
+              placeholder="Email (optionnel : s'il est déjà inscrit, il est ajouté directement)"
               className={inputClass}
-              aria-label="ID Discord du joueur invité"
+              aria-label="Email du joueur invité"
             />
             <Button type="submit" variant="primary" disabled={!validInvite || sendInvite.isPending}>
               Inviter
@@ -327,7 +328,7 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
               return (
                 <li key={i.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">
-                    {i.note || i.email || i.discord_id} <span className="text-slate-500">· {TEAM_ROLE_LABEL[i.team_role]}</span>
+                    {i.note || i.email} <span className="text-slate-500">· {TEAM_ROLE_LABEL[i.team_role]}</span>
                   </span>
                   <span className={cx('text-xs', active ? 'text-sky-300' : 'text-slate-500')}>
                     {active ? `lien valable jusqu'au ${formatDay(i.invite_expires_at!)}` : 'lien expiré'}

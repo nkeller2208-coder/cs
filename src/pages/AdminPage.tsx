@@ -459,9 +459,8 @@ function MembersAdmin() {
   const invite = useMutation({
     mutationFn: async () => {
       const v = ident.trim()
-      const isDiscord = /^\d{15,21}$/.test(v)
-      const { id } = await addAllowlist({ email: isDiscord || !v ? null : v, discord_id: isDiscord ? v : null, role, note })
-      // Lien de connexion généré tout de suite : à envoyer à la personne (Discord, SMS…).
+      const { id } = await addAllowlist({ email: v || null, role, note })
+      // Lien d'inscription généré tout de suite : à envoyer à la personne en message privé.
       return { ...(await createInvite(id)), who: note.trim() || v }
     },
     onSuccess: (l) => {
@@ -493,13 +492,13 @@ function MembersAdmin() {
   })
 
   const v = ident.trim()
-  const validIdent = /^\d{15,21}$/.test(v) || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) || (!v && !!note.trim())
+  const validIdent = !!note.trim() && (!v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))
 
   return (
     <div className="space-y-10">
       <Section
         title="Inviter"
-        hint="Identifiant Discord (Paramètres › Avancés › Mode développeur, puis clic droit sur le profil › Copier l'identifiant) ou email du compte Discord. Ou juste un pseudo : un lien de connexion personnel est généré, à lui envoyer."
+        hint="Saisis un pseudo (et son email si tu le connais) : un lien d'inscription à usage unique est généré, à lui envoyer. Il y choisit son email et son mot de passe, qui lui servent ensuite à se connecter."
       >
         <form
           onSubmit={(e) => {
@@ -509,7 +508,7 @@ function MembersAdmin() {
           className="flex flex-wrap gap-2"
         >
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pseudo" className={cx(inputClass, 'w-40!')} aria-label="Pseudo" />
-          <input value={ident} onChange={(e) => setIdent(e.target.value)} placeholder="ID Discord ou email (optionnel)" className={cx(inputClass, 'min-w-60 flex-1')} aria-label="ID Discord ou email" />
+          <input type="email" value={ident} onChange={(e) => setIdent(e.target.value)} placeholder="Email (optionnel)" className={cx(inputClass, 'min-w-60 flex-1')} aria-label="Email" />
           <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className={cx(inputClass, 'w-auto!')}>
             <option value="member">Membre</option>
             <option value="admin">Admin</option>
@@ -561,18 +560,16 @@ function MembersAdmin() {
         </ul>
       </Section>
 
-      <Section title="Liste blanche" hint="Les personnes autorisées à se connecter. Une invitation devient un membre à la première connexion. Un lien de connexion est valable 7 jours ; en générer un nouveau remplace l'ancien.">
+      <Section title="Liste blanche" hint="Les personnes autorisées sur le site. Un lien d'inscription ne sert qu'une fois et reste valable 7 jours ; en générer un nouveau remplace l'ancien. Pour un membre déjà inscrit, le lien lui permet de choisir un nouveau mot de passe (mot de passe oublié).">
         <ul className="divide-y divide-slate-800 rounded-xl ring-1 ring-slate-800">
           {(allow.data ?? []).map((a) => (
             <li key={a.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm">
               <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium text-slate-100">{a.member_name || a.note || a.email || `Discord ${a.discord_id}`}</span>
-                <span className="text-slate-500">
-                  {[a.discord_id && `Discord ${a.discord_id}`, a.email].filter(Boolean).map((x) => ` · ${x}`)}
-                </span>
+                <span className="font-medium text-slate-100">{a.member_name || a.note || a.email}</span>
+                {a.email && <span className="text-slate-500"> · {a.email}</span>}
               </span>
               {a.member_id ? (
-                <Badge className="bg-emerald-500/15 text-emerald-200 ring-emerald-500/30">connecté</Badge>
+                <Badge className="bg-emerald-500/15 text-emerald-200 ring-emerald-500/30">inscrit</Badge>
               ) : (
                 <Badge>en attente</Badge>
               )}
@@ -585,7 +582,7 @@ function MembersAdmin() {
                 </span>
               ) : null}
               <Button size="sm" onClick={() => makeLink.mutate({ id: a.id, who: a.member_name || a.note || a.email || '' })}>
-                🔗 Lien de connexion
+                {a.member_id ? '🔑 Lien nouveau mot de passe' : "🔗 Lien d'inscription"}
               </Button>
               <select
                 value={a.role}

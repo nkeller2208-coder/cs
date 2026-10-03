@@ -8,13 +8,24 @@ import { byOrder } from './text'
 // ------------------------------------------------------------ Connexion
 
 export interface AuthConfig {
-  discord: boolean
   devLogin: boolean
 }
 export const fetchAuthConfig = () => api.get<AuthConfig>('/auth/config')
 export const fetchMe = () => api.get<Me>('/auth/me')
 export const logout = () => api.post('/auth/logout')
 export const devLogin = (email: string) => api.post('/auth/dev', { email })
+export const login = (email: string, password: string) => api.post('/auth/login', { email, password })
+
+/** Lien d'inscription : « signup » (nouveau compte) ou « reset » (nouveau mot de passe d'un compte existant). */
+export interface InviteInfo {
+  mode: 'signup' | 'reset'
+  name: string
+  email: string
+  expires_at: string
+}
+export const fetchInviteInfo = (token: string) => api.get<InviteInfo>(`/auth/invite/${encodeURIComponent(token)}/info`)
+export const register = (p: { token: string; display_name: string; email: string; password: string }) =>
+  api.post<{ ok: true; mode: InviteInfo['mode'] }>('/auth/register', p)
 
 // ------------------------------------------------------------ Étiquettes
 
@@ -93,7 +104,7 @@ export const removeMember = (id: string) => api.del(`/members/${id}`)
 export const fetchLastValues = (_userId?: string) => api.get<LastValues>('/members/me/last-values')
 
 export const fetchAllowlist = () => api.get<AllowlistEntry[]>('/allowlist')
-export const addAllowlist = (entry: { email?: string | null; discord_id?: string | null; role: string; note?: string }) =>
+export const addAllowlist = (entry: { email?: string | null; role: string; note?: string }) =>
   api.post<{ id: number }>('/allowlist', entry)
 export const updateAllowlist = (id: number, values: Partial<Pick<AllowlistEntry, 'role'>>) => api.patch(`/allowlist/${id}`, values)
 export const deleteAllowlist = (id: number) => api.del(`/allowlist/${id}`)
@@ -146,7 +157,7 @@ export const renameTeam = (id: number, name: string) => api.patch(`/teams/${id}`
 export const deleteTeam = (id: number) => api.del(`/teams/${id}`)
 export const setTeamMember = (teamId: number, memberId: string, role: TeamRole) => api.put(`/teams/${teamId}/members/${memberId}`, { role })
 export const removeTeamMember = (teamId: number, memberId: string) => api.del(`/teams/${teamId}/members/${memberId}`)
-export const inviteToTeam = (teamId: number, invite: { note?: string; email?: string; discord_id?: string; role: TeamRole }) =>
+export const inviteToTeam = (teamId: number, invite: { note?: string; email?: string; role: TeamRole }) =>
   api.post<InviteResult>(`/teams/${teamId}/invites`, invite)
 export const teamInviteLink = (teamId: number, entryId: number) =>
   api.post<{ url: string; expires_at: string }>(`/teams/${teamId}/invites/${entryId}/link`)

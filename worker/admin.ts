@@ -57,7 +57,7 @@ allowlist.use(requireAdmin)
 allowlist.get('/', async (c) => {
   const rows = await all<Record<string, unknown>>(
     c.env.DB,
-    `SELECT a.id, a.email, a.discord_id, a.role, a.note, a.created_at, a.invite_expires_at,
+    `SELECT a.id, a.email, a.role, a.note, a.created_at, a.invite_expires_at,
             m.id AS member_id, m.display_name AS member_name
        FROM allowlist a LEFT JOIN members m ON m.allowlist_id = a.id
       ORDER BY a.created_at DESC`,
@@ -66,16 +66,14 @@ allowlist.get('/', async (c) => {
 })
 
 allowlist.post('/', async (c) => {
-  const b = await c.req.json<{ email?: string; discord_id?: string; role?: string; note?: string }>()
+  const b = await c.req.json<{ email?: string; role?: string; note?: string }>()
   const email = b.email?.trim().toLowerCase() || null
-  const discord = b.discord_id?.trim() || null
   const note = b.note?.trim().slice(0, 60) || null
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'Email invalide')
-  if (discord && !/^\d{15,21}$/.test(discord)) fail(400, 'Identifiant Discord invalide (15 à 21 chiffres)')
-  if (!email && !discord && !note) fail(400, 'Indique un email, un identifiant Discord ou au moins un pseudo')
+  if (!email && !note) fail(400, 'Indique au moins un pseudo')
   const role = b.role === 'admin' ? 'admin' : 'member'
-  const row = await c.env.DB.prepare('INSERT INTO allowlist (email, discord_id, role, note) VALUES (?, ?, ?, ?) RETURNING id')
-    .bind(email, discord, role, note).first().catch(sqlError)
+  const row = await c.env.DB.prepare('INSERT INTO allowlist (email, role, note) VALUES (?, ?, ?) RETURNING id')
+    .bind(email, role, note).first().catch(sqlError)
   return c.json(row)
 })
 
@@ -92,7 +90,8 @@ allowlist.delete('/:id', async (c) => {
 })
 
 /**
- * Génère un lien de connexion personnel (valable 7 jours, réutilisable sur plusieurs appareils).
+ * Génère un lien d'inscription à usage unique (valable 7 jours) : la personne y choisit son email et son mot de passe.
+ * Pour un membre déjà inscrit, le lien sert à choisir un nouveau mot de passe.
  * Un nouveau lien remplace le précédent. Seul le haché est stocké.
  */
 allowlist.post('/:id/invite', async (c) => {
@@ -101,7 +100,7 @@ allowlist.post('/:id/invite', async (c) => {
   const token = randomToken()
   const expires = new Date(Date.now() + INVITE_DAYS * 86_400_000).toISOString()
   await c.env.DB.prepare('UPDATE allowlist SET invite_hash = ?, invite_expires_at = ? WHERE id = ?').bind(await sha256(token), expires, id).run()
-  return c.json({ url: new URL(`/api/auth/invite/${token}`, c.req.url).toString(), expires_at: expires })
+  return c.json({ url: new URL(`/inscription/${token}`, c.req.url).toString(), expires_at: expires })
 })
 
 allowlist.delete('/:id/invite', async (c) => {

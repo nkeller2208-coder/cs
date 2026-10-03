@@ -2,10 +2,14 @@ import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { createMiddleware } from 'hono/factory'
 import { type AppEnv, type Ctx, type Env, type Me, fail, first, now, randomToken, sha256 } from './env'
+import { hashPassword, passwordProblem, verifyPassword } from './password'
 
 const SESSION_COOKIE = 'cs2kb_session'
-const STATE_COOKIE = 'cs2kb_oauth_state'
 const SESSION_DAYS = 30
+/** Verrouillage temporaire du compte après plusieurs mots de passe erronés. */
+const MAX_FAILED = 5
+const LOCK_MINUTES = 15
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 function cookieOpts(c: Ctx, maxAge: number) {
   const secure = new URL(c.req.url).protocol === 'https:'
@@ -15,14 +19,14 @@ function cookieOpts(c: Ctx, maxAge: number) {
 interface AllowEntry {
   id: number
   email: string | null
-  discord_id: string | null
   role: 'admin' | 'member'
   note: string | null
   team_id: number | null
   team_role: string | null
+  invite_expires_at: string | null
 }
 
-/** Invitation dans une équipe : la personne la rejoint dès qu'elle se connecte. */
+/** Invitation dans une équipe : la personne la rejoint dès qu'elle est inscrite. */
 async function joinInvitedTeam(env: Env, entry: AllowEntry, memberId: string) {
   if (!entry.team_id) return
   await env.DB.prepare('INSERT OR IGNORE INTO team_members (team_id, member_id, role, added_by) SELECT ?, ?, ?, invited_by FROM allowlist WHERE id = ?')
@@ -30,26 +34,22 @@ async function joinInvitedTeam(env: Env, entry: AllowEntry, memberId: string) {
 }
 
 interface Identity {
-  discord_id?: string | null
   email?: string | null
   name?: string | null
-  avatar_url?: string | null
 }
 
-/** Membre rattaché à une entrée de la liste blanche (créé à la première connexion). */
+/** Membre rattaché à une entrée de la liste blanche (créé à la première connexion / inscription). */
 async function claimMember(env: Env, entry: AllowEntry, who: Identity): Promise<string> {
   const db = env.DB
   const existing = await first<{ id: string }>(db, 'SELECT id FROM members WHERE allowlist_id = ?', entry.id)
   if (existing) {
     await db
       .prepare(
-        `UPDATE members SET
-           discord_id = COALESCE(?, discord_id), email = COALESCE(?, email),
-           avatar_url = COALESCE(?, avatar_url),
+        `UPDATE members SET email = COALESCE(?, email),
            display_name = CASE WHEN display_name = '' THEN COALESCE(?, '') ELSE display_name END
          WHERE id = ?`,
       )
-      .bind(who.discord_id ?? null, who.email ?? null, who.avatar_url ?? null, who.name ?? null, existing.id)
+      .bind(who.email ?? null, who.name ?? null, existing.id)
       .run()
     await joinInvitedTeam(env, entry, existing.id)
     return existing.id
@@ -57,11 +57,8 @@ async function claimMember(env: Env, entry: AllowEntry, who: Identity): Promise<
   const id = crypto.randomUUID()
   // INSERT OR IGNORE : deux connexions simultanées ne créent qu'un membre.
   await db
-    .prepare(
-      `INSERT OR IGNORE INTO members (id, allowlist_id, email, discord_id, display_name, avatar_url, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(id, entry.id, who.email ?? entry.email, who.discord_id ?? entry.discord_id, who.name || entry.note || (who.email ?? entry.email ?? '').split('@')[0], who.avatar_url ?? null, entry.role)
+    .prepare('INSERT OR IGNORE INTO members (id, allowlist_id, email, display_name, role) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, entry.id, who.email ?? entry.email, who.name || entry.note || (who.email ?? entry.email ?? '').split('@')[0], entry.role)
     .run()
   const memberId = (await first<{ id: string }>(db, 'SELECT id FROM members WHERE allowlist_id = ?', entry.id))!.id
   await joinInvitedTeam(env, entry, memberId)
@@ -77,15 +74,6 @@ async function startSession(c: Ctx, memberId: string) {
   // Ménage opportuniste des sessions expirées.
   await c.env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now()).run()
   setCookie(c, SESSION_COOKIE, token, cookieOpts(c, SESSION_DAYS * 86_400))
-}
-
-async function findEntry(env: Env, who: Identity): Promise<AllowEntry | null> {
-  if (who.discord_id) {
-    const e = await first<AllowEntry>(env.DB, 'SELECT * FROM allowlist WHERE discord_id = ?', who.discord_id)
-    if (e) return e
-  }
-  if (who.email) return first<AllowEntry>(env.DB, 'SELECT * FROM allowlist WHERE email = ? COLLATE NOCASE', who.email)
-  return null
 }
 
 /** Membre de la session courante (ou null). */
@@ -116,9 +104,7 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 export const auth = new Hono<AppEnv>()
 
-auth.get('/config', (c) =>
-  c.json({ discord: !!(c.env.DISCORD_CLIENT_ID && c.env.DISCORD_CLIENT_SECRET), devLogin: c.env.DEV_LOGIN === 'true' }),
-)
+auth.get('/config', (c) => c.json({ devLogin: c.env.DEV_LOGIN === 'true' }))
 
 auth.get('/me', async (c) => {
   const me = await currentMember(c)
@@ -132,18 +118,125 @@ auth.post('/logout', async (c) => {
   return c.json({ ok: true })
 })
 
-// ------------------------------------------------------------ Lien de connexion personnel
+// ------------------------------------------------------------ Connexion email + mot de passe
 
-auth.get('/invite/:token', async (c) => {
-  const entry = await first<AllowEntry & { invite_expires_at: string }>(
+auth.post('/login', async (c) => {
+  const b = await c.req.json<{ email?: string; password?: string }>().catch(() => ({}) as { email?: string; password?: string })
+  const email = String(b.email ?? '').trim().toLowerCase()
+  const password = String(b.password ?? '')
+  if (!email || !password || password.length > 200) fail(400, 'Indique ton email et ton mot de passe.')
+
+  const m = await first<{ id: string; password_hash: string | null; failed_logins: number; locked_until: string | null }>(
     c.env.DB,
-    'SELECT * FROM allowlist WHERE invite_hash = ? AND invite_expires_at > ?',
-    await sha256(c.req.param('token')),
+    'SELECT id, password_hash, failed_logins, locked_until FROM members WHERE email = ? COLLATE NOCASE AND password_hash IS NOT NULL LIMIT 1',
+    email,
+  )
+  if (m?.locked_until && m.locked_until > now()) {
+    fail(429, `Trop d'essais : compte bloqué ${LOCK_MINUTES} minutes. Réessaie plus tard ou demande un nouveau lien à l'admin.`)
+  }
+  // Toujours calculer un hash (même sans compte) : la durée de réponse ne révèle pas si l'email existe.
+  const ok = await verifyPassword(password, m?.password_hash ?? null)
+  if (!m || !ok) {
+    if (m) {
+      const failed = m.failed_logins + 1
+      const lock = failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null
+      await c.env.DB.prepare('UPDATE members SET failed_logins = ?, locked_until = ? WHERE id = ?')
+        .bind(lock ? 0 : failed, lock, m.id)
+        .run()
+    }
+    fail(401, 'Email ou mot de passe incorrect.')
+  }
+  await c.env.DB.prepare('UPDATE members SET failed_logins = 0, locked_until = NULL WHERE id = ?').bind(m.id).run()
+  await startSession(c, m.id)
+  return c.json({ ok: true })
+})
+
+// ------------------------------------------------------------ Lien d'inscription (usage unique)
+
+async function inviteEntry(env: Env, token: string): Promise<AllowEntry | null> {
+  return first<AllowEntry>(
+    env.DB,
+    'SELECT id, email, role, note, team_id, team_role, invite_expires_at FROM allowlist WHERE invite_hash = ? AND invite_expires_at > ?',
+    await sha256(token),
     now(),
   )
-  if (!entry) return c.redirect('/?auth=expired')
-  await startSession(c, await claimMember(c.env, entry, {}))
-  return c.redirect('/')
+}
+
+const EXPIRED = "Ce lien a expiré, a déjà été utilisé ou a été remplacé : demande un nouveau lien à l'admin ou à ton capitaine."
+
+// Anciens liens (/api/auth/invite/…) : redirigés vers la page d'inscription, sans connecter personne.
+auth.get('/invite/:token', (c) => c.redirect(`/inscription/${encodeURIComponent(c.req.param('token'))}`))
+
+/** Ce que la page d'inscription doit afficher (sans consommer le lien). */
+auth.get('/invite/:token/info', async (c) => {
+  const entry = await inviteEntry(c.env, c.req.param('token'))
+  if (!entry) fail(404, EXPIRED)
+  const member = await first<{ display_name: string; email: string | null }>(
+    c.env.DB,
+    'SELECT display_name, email FROM members WHERE allowlist_id = ?',
+    entry.id,
+  )
+  return c.json({
+    // « reset » : la personne a déjà un compte, le lien sert à choisir un nouveau mot de passe.
+    mode: member ? 'reset' : 'signup',
+    name: member?.display_name || entry.note || '',
+    email: member?.email ?? entry.email ?? '',
+    expires_at: entry.invite_expires_at,
+  })
+})
+
+/** Inscription (ou nouveau mot de passe) : consomme le lien, puis connecte la personne. */
+auth.post('/register', async (c) => {
+  const db = c.env.DB
+  const b = await c.req
+    .json<{ token?: string; display_name?: string; email?: string; password?: string }>()
+    .catch(() => ({}) as Record<string, string | undefined>)
+  const token = String(b.token ?? '')
+  const entry = token ? await inviteEntry(c.env, token) : null
+  if (!entry) fail(400, EXPIRED)
+
+  const email = String(b.email ?? '').trim().toLowerCase()
+  const password = String(b.password ?? '')
+  if (!EMAIL_RE.test(email) || email.length > 254) fail(400, 'Email invalide')
+  const problem = passwordProblem(password)
+  if (problem) fail(400, problem)
+  const member = await first<{ id: string }>(db, 'SELECT id FROM members WHERE allowlist_id = ?', entry.id)
+  const name = String(b.display_name ?? '').trim().slice(0, 40)
+  if (!member && !name) fail(400, 'Choisis un pseudo')
+
+  // L'email sert d'identifiant de connexion : il doit être unique.
+  const taken = await first(
+    db,
+    `SELECT 1 FROM allowlist WHERE email = ?1 COLLATE NOCASE AND id <> ?2
+     UNION SELECT 1 FROM members WHERE email = ?1 COLLATE NOCASE AND (allowlist_id IS NULL OR allowlist_id <> ?2) LIMIT 1`,
+    email,
+    entry.id,
+  )
+  if (taken) fail(409, 'Cet email est déjà utilisé par un autre compte.')
+
+  const hash = await hashPassword(password)
+  // Consommation atomique : deux envois simultanés du formulaire ne peuvent pas tous deux réussir.
+  const used = await db
+    .prepare('UPDATE allowlist SET invite_hash = NULL, invite_expires_at = NULL, email = ? WHERE id = ? AND invite_hash = ? AND invite_expires_at > ?')
+    .bind(email, entry.id, await sha256(token), now())
+    .run()
+    .catch(() => fail(409, 'Cet email est déjà utilisé par un autre compte.'))
+  if (!used.meta.changes) fail(400, EXPIRED)
+
+  let memberId: string
+  if (member) {
+    // Nouveau mot de passe : les autres appareils connectés sont déconnectés.
+    memberId = member.id
+    await db.batch([
+      db.prepare('UPDATE members SET password_hash = ?, email = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').bind(hash, email, memberId),
+      db.prepare('DELETE FROM sessions WHERE member_id = ?').bind(memberId),
+    ])
+  } else {
+    memberId = await claimMember(c.env, { ...entry, email }, { email, name })
+    await db.prepare('UPDATE members SET password_hash = ?, display_name = ? WHERE id = ?').bind(hash, name, memberId).run()
+  }
+  await startSession(c, memberId)
+  return c.json({ ok: true, mode: member ? 'reset' : 'signup' })
 })
 
 // ------------------------------------------------------------ Connexion de développement
@@ -151,66 +244,8 @@ auth.get('/invite/:token', async (c) => {
 auth.post('/dev', async (c) => {
   if (c.env.DEV_LOGIN !== 'true') fail(404, 'Indisponible')
   const { email } = await c.req.json<{ email?: string }>()
-  const entry = await findEntry(c.env, { email: email?.trim() })
+  const entry = email ? await first<AllowEntry>(c.env.DB, 'SELECT * FROM allowlist WHERE email = ? COLLATE NOCASE', email.trim()) : null
   if (!entry) fail(403, `« ${email} » n'est pas sur la liste des membres.`)
   await startSession(c, await claimMember(c.env, entry, { email: email?.trim() }))
   return c.json({ ok: true })
-})
-
-// ------------------------------------------------------------ Discord OAuth2
-
-auth.get('/discord', (c) => {
-  if (!c.env.DISCORD_CLIENT_ID) fail(404, 'Connexion Discord non configurée')
-  const state = randomToken(16)
-  setCookie(c, STATE_COOKIE, state, cookieOpts(c, 600))
-  const redirect = new URL('/api/auth/callback', c.req.url).toString()
-  const url = new URL('https://discord.com/oauth2/authorize')
-  url.search = new URLSearchParams({
-    client_id: c.env.DISCORD_CLIENT_ID,
-    redirect_uri: redirect,
-    response_type: 'code',
-    scope: 'identify email',
-    state,
-    prompt: 'none',
-  }).toString()
-  return c.redirect(url.toString())
-})
-
-auth.get('/callback', async (c) => {
-  const { code, state } = c.req.query()
-  const expected = getCookie(c, STATE_COOKIE)
-  deleteCookie(c, STATE_COOKIE, { path: '/' })
-  if (!code || !state || state !== expected) return c.redirect('/?auth=error')
-
-  const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: c.env.DISCORD_CLIENT_ID!,
-      client_secret: c.env.DISCORD_CLIENT_SECRET!,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: new URL('/api/auth/callback', c.req.url).toString(),
-    }),
-  })
-  if (!tokenRes.ok) return c.redirect('/?auth=error')
-  const { access_token } = await tokenRes.json<{ access_token: string }>()
-  const userRes = await fetch('https://discord.com/api/users/@me', { headers: { authorization: `Bearer ${access_token}` } })
-  if (!userRes.ok) return c.redirect('/?auth=error')
-  const u = await userRes.json<{ id: string; username: string; global_name?: string; email?: string; verified?: boolean; avatar?: string }>()
-
-  const who: Identity = {
-    discord_id: u.id,
-    email: u.verified ? (u.email ?? null) : null,
-    name: u.global_name || u.username,
-    avatar_url: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null,
-  }
-  const entry = await findEntry(c.env, who)
-  if (!entry) {
-    // On affiche l'identifiant Discord pour que l'admin puisse l'ajouter à la liste.
-    const q = new URLSearchParams({ auth: 'denied', name: who.name ?? '', discord: u.id })
-    return c.redirect(`/?${q}`)
-  }
-  await startSession(c, await claimMember(c.env, entry, who))
-  return c.redirect('/')
 })

@@ -114,11 +114,10 @@ export interface Me {
 export interface AllowlistEntry {
   id: number
   email: string | null
-  discord_id: string | null
   role: MemberRole
   note: string | null
   created_at: string
-  /** Fin de validité du lien de connexion personnel (null : aucun lien actif). */
+  /** Fin de validité du lien d'inscription (null : aucun lien actif). */
   invite_expires_at: string | null
   member_id: string | null
   member_name: string | null
@@ -175,7 +174,6 @@ export interface TeamInvite {
   team_role: TeamRole
   note: string | null
   email: string | null
-  discord_id: string | null
   invite_expires_at: string | null
   created_at: string
 }

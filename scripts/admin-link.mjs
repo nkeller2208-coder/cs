@@ -9,4 +9,4 @@ if (remote && !base?.startsWith('https://')) {
   console.error('Indique l\'adresse du site : npm run admin-link -- --remote https://ton-site.workers.dev')
   process.exit(1)
 }
-banner(['Lien de connexion admin (valable 7 jours) :', '', adminLink(base, { remote })])
+banner(["Lien d'inscription admin (usage unique, valable 7 jours) : choisis ton email et ton mot de passe", '', adminLink(base, { remote })])

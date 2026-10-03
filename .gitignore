@@ -8,3 +8,4 @@ supabase/.temp
 e2e/screenshots
 .dev.vars
 .wrangler
+backups

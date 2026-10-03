@@ -4,9 +4,6 @@ import { HTTPException } from 'hono/http-exception'
 export interface Env {
   DB: D1Database
   ASSETS: Fetcher
-  /** Application Discord (optionnelle) : https://discord.com/developers/applications */
-  DISCORD_CLIENT_ID?: string
-  DISCORD_CLIENT_SECRET?: string
   /** « true » uniquement en local / tests : connexion par simple email (jamais en production). */
   DEV_LOGIN?: string
 }
@@ -26,7 +23,7 @@ export type Ctx = Context<AppEnv>
 export const now = () => new Date().toISOString()
 
 /** Erreur renvoyée telle quelle au client (message en français). */
-export function fail(status: 400 | 401 | 403 | 404 | 409, message: string): never {
+export function fail(status: 400 | 401 | 403 | 404 | 409 | 429, message: string): never {
   throw new HTTPException(status, { message })
 }
 

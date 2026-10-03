@@ -7,6 +7,7 @@ import { BrowsePage } from './pages/BrowsePage'
 import { CardDetailRoute } from './pages/CardDetail'
 import { CardFormPage } from './pages/CardFormPage'
 import { DeniedPage, LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
 
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ImportPage = lazy(() => import('./pages/ImportPage'))
@@ -19,6 +20,10 @@ const PrincipleFormPage = lazy(() => import('./pages/PrinciplesPage').then((m) =
 
 export function App() {
   const auth = useAuthState()
+  const { pathname } = useLocation()
+  // Lien d'inscription : page publique, accessible même déjà connecté (ex. nouveau mot de passe).
+  const signup = /^\/inscription\/([^/]+)\/?$/.exec(pathname)
+  if (signup) return <RegisterPage token={decodeURIComponent(signup[1])} />
   if (auth.status === 'loading') return <FullPageSpinner />
   // Aucune page n'est visible sans connexion.
   if (auth.status === 'anonymous') return <LoginPage />

@@ -38,6 +38,8 @@ function ok(cond, msg) {
   n++
 }
 const expect = (r, status, msg) => ok(r.status === status, `${msg} (attendu ${status}, reçu ${r.status} ${JSON.stringify(r.data)})`)
+/** Jeton d'un lien d'inscription (…/inscription/<jeton>). */
+const tokenOf = (url) => decodeURIComponent(new URL(url).pathname.split('/inscription/')[1])
 
 const anon = new Client()
 const admin = new Client()
@@ -145,8 +147,7 @@ const inv = (await member.post(`/teams/${alpha}/invites`, { note: 'Recrue', role
 ok(inv.url && !inv.added, 'capitaine : lien d’invitation créé')
 expect(await member.post(`/teams/${beta}/invites`, { note: 'X' }), 403, 'capitaine : pas d’invitation dans une autre équipe')
 const recrue = new Client()
-const r1 = await fetch(inv.url, { redirect: 'manual' })
-recrue.cookie = r1.headers.getSetCookie()[0].split(';')[0]
+expect(await recrue.post('/auth/register', { token: tokenOf(inv.url), display_name: 'Recrue', email: 'recrue@team.gg', password: 'recrue-mdp-123' }), 200, 'recrue inscrite par son lien')
 const meR = (await recrue.get('/auth/me')).data
 ok(meR.display_name === 'Recrue', 'recrue connectée')
 teamsList = (await recrue.get('/teams')).data
@@ -184,20 +185,61 @@ expect(await recrue.del(`/teams/${alpha}/members/${meR.id}`), 200, 'un joueur pe
 expect(await member.del(`/teams/${alpha}`), 403, 'capitaine ne supprime pas l’équipe')
 expect(await admin.del(`/teams/${beta}`), 200, 'admin supprime une équipe')
 
-// ------------------------------------------------------------ Liens de connexion
-const entry = (await admin.post('/allowlist', { note: 'Sans Discord' })).data.id
+// ------------------------------------------------------------ Lien d'inscription + email / mot de passe
+expect(await admin.get('/auth/discord'), 404, 'Discord supprimé')
+expect(await admin.get('/auth/callback'), 404, 'retour Discord supprimé')
+ok(!('discord' in (await anon.get('/auth/config')).data), 'config : plus de Discord')
+const entry = (await admin.post('/allowlist', { note: 'Invité' })).data.id
+expect(await member.post(`/allowlist/${entry}/invite`), 403, 'membre ne génère pas de lien admin')
 const { url } = (await admin.post(`/allowlist/${entry}/invite`)).data
+ok(new URL(url).pathname.startsWith('/inscription/'), 'lien : page d’inscription')
+const token = tokenOf(url)
+// Ancien format de lien : redirige vers l'inscription sans connecter.
+const legacy = await fetch(`${BASE}/api/auth/invite/${token}`, { redirect: 'manual' })
+ok(legacy.status === 302 && legacy.headers.get('location') === `/inscription/${token}` && !legacy.headers.getSetCookie().length, 'ancien lien : redirection sans session')
+const info = await anon.get(`/auth/invite/${token}/info`)
+ok(info.status === 200 && info.data.mode === 'signup' && info.data.name === 'Invité', 'lien : infos (sans le consommer)')
+expect(await anon.get(`/auth/invite/${token}/info`), 200, 'lien : consulter ne le consomme pas')
 const guest = new Client()
-const res = await fetch(url, { redirect: 'manual' })
-ok(res.status === 302 && res.headers.get('location') === '/', 'lien : redirection vers le site')
-guest.cookie = res.headers.getSetCookie()[0].split(';')[0]
+const reg = (p) => guest.post('/auth/register', { token, display_name: 'Invité', email: 'invite@team.gg', password: 'invite-mdp-123', ...p })
+expect(await reg({ password: 'court' }), 400, 'mot de passe trop court refusé')
+expect(await reg({ email: 'pas-un-email' }), 400, 'email invalide refusé')
+expect(await reg({ email: 'ADMIN@team.gg' }), 409, 'email déjà utilisé par un autre compte refusé')
+expect(await reg({ token: 'faux' }), 400, 'jeton inconnu refusé')
+expect(await guest.req('POST', '/auth/register', { token, email: 'invite@team.gg', password: 'invite-mdp-123' }, { csrf: false }), 403, 'inscription : CSRF')
+expect(await reg({}), 200, 'inscription réussie')
 const guestMe = (await guest.get('/auth/me')).data
-ok(guestMe?.display_name === 'Sans Discord' && guestMe.role === 'member', 'lien : connecté avec le pseudo')
-await admin.del(`/allowlist/${entry}/invite`)
-const again = await fetch(url, { redirect: 'manual' })
-ok(again.headers.get('location') === '/?auth=expired', 'lien révoqué : refusé')
+ok(guestMe?.display_name === 'Invité' && guestMe.role === 'member' && guestMe.email === 'invite@team.gg', 'inscrit et connecté avec son pseudo et son email')
+expect(await new Client().post('/auth/register', { token, display_name: 'X', email: 'x@team.gg', password: 'xxxxxxxx1' }), 400, 'lien à usage unique : 2e inscription refusée')
+expect(await anon.get(`/auth/invite/${token}/info`), 404, 'lien utilisé : plus valable')
 expect(await guest.post('/auth/logout'), 200, 'déconnexion')
 expect(await guest.get('/auth/me'), 401, 'session terminée')
+
+// Connexion
+expect(await guest.post('/auth/login', { email: 'invite@team.gg', password: 'mauvais' }), 401, 'mauvais mot de passe refusé')
+expect(await guest.post('/auth/login', { email: 'inconnu@team.gg', password: 'invite-mdp-123' }), 401, 'email inconnu refusé (même message)')
+expect(await guest.req('POST', '/auth/login', { email: 'invite@team.gg', password: 'invite-mdp-123' }, { csrf: false }), 403, 'connexion : CSRF')
+expect(await guest.post('/auth/login', { email: 'Invite@Team.gg', password: 'invite-mdp-123' }), 200, 'connexion email + mot de passe (email insensible à la casse)')
+ok((await guest.get('/auth/me')).data?.id === guestMe.id, 'connecté au bon compte')
+// Anti force brute : 5 échecs → bloqué, même avec le bon mot de passe.
+const thief = new Client()
+for (let i = 0; i < 5; i++) await thief.post('/auth/login', { email: 'invite@team.gg', password: `essai-${i}` })
+expect(await thief.post('/auth/login', { email: 'invite@team.gg', password: 'invite-mdp-123' }), 429, 'compte bloqué après 5 échecs')
+
+// Mot de passe oublié : l'admin génère un nouveau lien pour le membre (débloque aussi le compte).
+const { url: resetUrl } = (await admin.post(`/allowlist/${entry}/invite`)).data
+const resetInfo = (await anon.get(`/auth/invite/${tokenOf(resetUrl)}/info`)).data
+ok(resetInfo.mode === 'reset' && resetInfo.email === 'invite@team.gg', 'lien pour un inscrit : nouveau mot de passe')
+const phone = new Client()
+expect(await phone.post('/auth/register', { token: tokenOf(resetUrl), email: 'invite@team.gg', password: 'nouveau-mdp-456' }), 200, 'nouveau mot de passe enregistré')
+expect(await guest.get('/auth/me'), 401, 'nouveau mot de passe : autres sessions déconnectées')
+expect(await guest.post('/auth/login', { email: 'invite@team.gg', password: 'invite-mdp-123' }), 401, 'ancien mot de passe refusé')
+expect(await guest.post('/auth/login', { email: 'invite@team.gg', password: 'nouveau-mdp-456' }), 200, 'nouveau mot de passe accepté (compte débloqué)')
+ok((await guest.get('/auth/me')).data?.id === guestMe.id, 'même compte après changement de mot de passe')
+const { url: revoked } = (await admin.post(`/allowlist/${entry}/invite`)).data
+expect(await anon.get(`/auth/invite/${tokenOf(revoked)}/info`), 200, 'lien actif')
+await admin.del(`/allowlist/${entry}/invite`)
+expect(await anon.get(`/auth/invite/${tokenOf(revoked)}/info`), 404, 'lien révoqué : refusé')
 expect(await admin.del(`/members/${meA.id}`), 400, 'admin ne se retire pas lui-même')
 expect(await admin.del(`/members/${guestMe.id}`), 200, 'admin retire un membre')
 

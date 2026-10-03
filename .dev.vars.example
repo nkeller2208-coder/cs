@@ -1,4 +1,0 @@
-# Copie ce fichier en .dev.vars pour activer la connexion Discord en local (optionnel).
-# Redirection à déclarer chez Discord : http://localhost:5173/api/auth/callback
-DISCORD_CLIENT_ID=
-DISCORD_CLIENT_SECRET=

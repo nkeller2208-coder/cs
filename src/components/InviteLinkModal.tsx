@@ -8,19 +8,20 @@ export interface InviteLink {
   who: string
 }
 
-/** Affiche un lien de connexion personnel à transmettre à la personne invitée. */
+/** Affiche un lien d'inscription (usage unique) à transmettre à la personne invitée. */
 export function InviteLinkModal({ link, onClose }: { link: InviteLink | null; onClose: () => void }) {
   const toast = useToast()
   return (
-    <Modal open={!!link} onClose={onClose} title={`Lien de connexion${link?.who ? ` · ${link.who}` : ''}`}>
+    <Modal open={!!link} onClose={onClose} title={`Lien d'inscription${link?.who ? ` · ${link.who}` : ''}`}>
       {link && (
         <div className="space-y-3 p-5">
           <p className="text-sm text-slate-300">
-            Envoie ce lien à la personne (message privé Discord, SMS…). En l'ouvrant, elle est connectée directement. Valable
-            jusqu'au <strong>{formatDay(link.expires_at)}</strong>, sur plusieurs appareils.
+            Envoie ce lien à la personne en message privé. En l'ouvrant, elle choisit son email et son mot de passe (ou un
+            nouveau mot de passe si elle a déjà un compte). <strong>Une seule utilisation</strong>, valable jusqu'au{' '}
+            <strong>{formatDay(link.expires_at)}</strong>. Générer un nouveau lien remplace celui-ci.
           </p>
-          <input readOnly value={link.url} onFocus={(e) => e.target.select()} className={cx(inputClass, 'font-mono text-xs')} aria-label="Lien de connexion" />
-          <p className="text-xs text-amber-300">⚠ Ce lien vaut mot de passe : ne le partage pas publiquement.</p>
+          <input readOnly value={link.url} onFocus={(e) => e.target.select()} className={cx(inputClass, 'font-mono text-xs')} aria-label="Lien d'inscription" />
+          <p className="text-xs text-amber-300">⚠ Ne le partage pas publiquement : la première personne qui l'utilise crée le compte.</p>
           <div className="flex justify-end gap-2">
             <Button
               variant="primary"

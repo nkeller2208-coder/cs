@@ -9,7 +9,7 @@ const admins = sql("SELECT COUNT(*) AS n FROM members WHERE role = 'admin'")
 if (!admins[0]?.n) {
   const url = adminLink('http://localhost:5173')
   banner([
-    'Premier lancement : ouvre ce lien pour te connecter en admin',
+    'Premier lancement : ouvre ce lien pour créer ton compte admin',
     '(une fois le site démarré, ci-dessous) :',
     '',
     url,

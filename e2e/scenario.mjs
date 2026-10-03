@@ -26,6 +26,16 @@ async function ctxFor(user, viewport = { width: 1440, height: 900 }) {
   return page
 }
 const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false })
+/** Ouvre un lien d'inscription et remplit le formulaire (pseudo prérempli par l'invitation). */
+async function signup(page, url, { email, password, shotName }) {
+  await page.goto(url)
+  await page.getByText('Crée ton compte').waitFor()
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Mot de passe', { exact: true }).fill(password)
+  await page.getByLabel('Confirme le mot de passe').fill(password)
+  if (shotName) await shot(page, shotName)
+  await page.getByRole('button', { name: 'Créer mon compte' }).click()
+}
 const step = (s) => console.log('✓', s)
 let current
 process.on('uncaughtException', async (e) => { console.log('FAIL', e.message.split('\n')[0]); try { await current?.screenshot({ path: `${SHOTS}/fail.png`, fullPage: true }) } catch {} ; console.log(errors.join('\n')); process.exit(1) })
@@ -33,7 +43,9 @@ process.on('uncaughtException', async (e) => { console.log('FAIL', e.message.spl
 // 1. anonyme
 let page = await ctxFor(null)
 await page.goto(BASE + '/c/1')
-await page.getByText('lien de connexion personnel').waitFor()
+await page.getByText("lien d'inscription").waitFor()
+await page.getByLabel('Mot de passe').waitFor()
+if (await page.getByText('Discord').count()) throw new Error('Discord encore affiché sur la page de connexion')
 await shot(page, '01-login'); step('login affiché sans session')
 
 // 2. intrus (connexion de test avec un email inconnu)
@@ -262,13 +274,13 @@ await page.goto(BASE + '/equipes')
 await page.getByText('Capitaine', { exact: true }).first().waitFor()
 await page.getByLabel('Pseudo du joueur invité').fill('Recrue')
 await page.getByRole('button', { name: 'Inviter' }).click()
-const recrueLink = await page.getByLabel('Lien de connexion').inputValue()
+const recrueLink = await page.getByLabel("Lien d'inscription").inputValue()
 await page.keyboard.press('Escape')
 await page.getByText('Invitations en attente').waitFor()
 await shot(page, '18-teams')
 const recrue = await ctxFor(null)
-await recrue.goto(recrueLink)
-await recrue.getByRole('link', { name: 'Compétences' }).waitFor(); step('capitaine invite une recrue, qui rejoint l’équipe par son lien')
+await signup(recrue, recrueLink, { email: 'recrue@team.gg', password: 'recrue-mdp-123' })
+await recrue.getByRole('link', { name: 'Compétences' }).waitFor(); step('capitaine invite une recrue, qui s’inscrit par son lien et rejoint l’équipe')
 
 // 12. compétences : objectif d'équipe propagé, la recrue progresse
 await page.goto(BASE + '/competences?vue=matrice')
@@ -293,16 +305,29 @@ await recrue.locator('section', { hasText: 'Acquis' }).last().getByText('Crossha
 step('fiche joueur : la recrue passe sa compétence « acquis »')
 await shot(recrue, '21-skills-player')
 
-// 13. lien de connexion personnel (admin) (sans Discord)
+// 13. lien d'inscription (admin) puis connexion email + mot de passe
 page = await ctxFor(users.admin)
 await page.goto(BASE + '/admin/membres')
 await page.getByLabel('Pseudo').fill('Coach')
 await page.getByRole('button', { name: 'Inviter' }).click()
-const invite = await page.getByLabel('Lien de connexion').inputValue()
+const invite = await page.getByLabel("Lien d'inscription").inputValue()
 await shot(page, '22-invite-link')
 page = await ctxFor(null)
+await signup(page, invite, { email: 'coach@team.gg', password: 'coach-mdp-123', shotName: '23-signup' })
+await page.getByRole('link', { name: 'Compétences' }).waitFor(); step("lien d'inscription : compte créé (email + mot de passe)")
+// Le lien ne sert qu'une fois.
 await page.goto(invite)
-await page.getByRole('link', { name: 'Compétences' }).waitFor(); step('lien de connexion personnel : connecté sans Discord')
+await page.getByText('a déjà été utilisé').waitFor(); step("lien d'inscription : refusé à la 2e utilisation")
+// Déconnexion puis connexion avec l'email et le mot de passe choisis.
+await page.request.post(BASE + '/api/auth/logout', { headers: { 'x-requested-with': 'cs2kb' } })
+await page.goto(BASE)
+await page.getByLabel('Email', { exact: true }).fill('coach@team.gg')
+await page.getByLabel('Mot de passe').fill('mauvais-mdp')
+await page.getByRole('button', { name: 'Se connecter' }).click()
+await page.getByText('Email ou mot de passe incorrect.').waitFor()
+await page.getByLabel('Mot de passe').fill('coach-mdp-123')
+await page.getByRole('button', { name: 'Se connecter' }).click()
+await page.getByRole('link', { name: 'Compétences' }).waitFor(); step('connexion par email + mot de passe')
 
 await browser.close()
 if (errors.length) { console.log('ERREURS NAVIGATEUR:\n' + errors.join('\n')); process.exit(1) }

@@ -11,7 +11,8 @@ export const NODE = process.execPath
 export const WRANGLER = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js')
 export const VITE = join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js')
 
-export const DB = 'cs2-playbook'
+// Base v2 (03/10/2026) : l'ancienne base « cs2-playbook » avait le schéma de la version précédente.
+export const DB = 'cs2-playbook-v2'
 
 /** Lance une commande et renvoie sa sortie (stdout). Lève une erreur si elle échoue. */
 export function run(cmd, args, { quiet = false, input } = {}) {
@@ -56,8 +57,8 @@ export function migrate({ remote = false, persistTo } = {}) {
 }
 
 /**
- * Crée (ou réutilise) une entrée admin dans la liste blanche et renvoie un lien
- * de connexion personnel valable 7 jours.
+ * Crée (ou réutilise) une entrée admin dans la liste blanche et renvoie un lien d'inscription
+ * à usage unique valable 7 jours (si le compte existe déjà : choix d'un nouveau mot de passe).
  */
 export function adminLink(baseUrl, { remote = false, name = 'Admin' } = {}) {
   const token = randomBytes(32).toString('base64url')
@@ -70,7 +71,7 @@ export function adminLink(baseUrl, { remote = false, name = 'Admin' } = {}) {
   } else {
     sql(`INSERT INTO allowlist (note, role, invite_hash, invite_expires_at) VALUES ('${safe}', 'admin', '${hash}', '${expires}')`, { remote })
   }
-  return `${baseUrl.replace(/\/$/, '')}/api/auth/invite/${token}`
+  return `${baseUrl.replace(/\/$/, '')}/inscription/${token}`
 }
 
 export function banner(lines) {
