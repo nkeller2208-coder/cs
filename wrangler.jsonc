@@ -13,8 +13,8 @@
     {
       "binding": "DB",
       "database_name": "cs2-playbook",
-      // Remplacé par l'identifiant réel au premier déploiement (voir README).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Pas d'identifiant : Cloudflare crée la base au premier déploiement et la réutilise ensuite.
+      // Les migrations sont appliquées par le Worker lui-même (worker/migrate.ts).
       "migrations_dir": "migrations"
     }
   ],

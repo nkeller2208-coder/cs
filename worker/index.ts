@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { allowlist, members } from './admin'
 import { auth, requireMember } from './auth'
+import { ensureMigrated } from './migrate'
 import { cards, media } from './cards'
 import type { AppEnv } from './env'
 import { principles } from './principles'
@@ -21,6 +22,12 @@ app.use(async (c, next) => {
   c.header('cache-control', 'no-store')
   c.header('x-content-type-options', 'nosniff')
   c.header('x-robots-tag', 'noindex, nofollow')
+})
+
+// La base se met à jour toute seule après chaque déploiement.
+app.use(async (c, next) => {
+  await ensureMigrated(c.env.DB)
+  await next()
 })
 
 app.route('/auth', auth)

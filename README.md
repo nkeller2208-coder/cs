@@ -35,23 +35,43 @@ Besoin d'un nouveau lien plus tard : `npm run admin-link`.
 
 La base locale est dans `.wrangler/state` (supprime ce dossier pour repartir de zéro).
 
-## Mettre en ligne (gratuit)
+## Mettre en ligne (gratuit, une seule fois)
+
+Le site est relié au dépôt GitHub : **chaque modification envoyée sur la branche `main` est mise en ligne
+automatiquement** (1 à 2 minutes). Aucune commande n'est nécessaire.
 
 1. Crée un compte sur [dash.cloudflare.com](https://dash.cloudflare.com/sign-up) (aucune carte bancaire requise).
-2. Dans le dossier du projet :
-   ```bash
-   npm run deploy
-   ```
-   Le script :
-   - ouvre le navigateur pour connecter ton compte Cloudflare (la première fois) ;
-   - crée la base D1 et note son identifiant dans `wrangler.jsonc` (la première fois) ;
-   - construit le site, applique les migrations, déploie ;
-   - affiche l'adresse du site (`https://cs2-playbook.<ton-compte>.workers.dev`) et, au premier déploiement,
-     un **lien de connexion admin**.
-3. Pense à committer `wrangler.jsonc` (il contient maintenant l'identifiant de la base).
+2. Menu de gauche **Compute (Workers)** → **Workers & Pages** → **Create** → onglet **Workers** →
+   **Import a repository** → **Connect GitHub** : autorise Cloudflare sur le dépôt `cs`.
+3. Choisis le dépôt `cs`, puis vérifie les réglages :
+   - **Project name** : `cs2-playbook` (doit correspondre au `name` de `wrangler.jsonc`) ;
+   - **Build command** : `npm run build` ;
+   - **Deploy command** : `npx wrangler deploy` ;
+   - **Production branch** : `main`.
+4. **Create and deploy**. Au premier déploiement, Cloudflare crée la base D1 ; le site crée ses tables à la
+   première visite. L'adresse s'affiche : `https://cs2-playbook.<ton-sous-domaine>.workers.dev`.
+   (Si Cloudflare demande de choisir un sous-domaine `workers.dev`, choisis-en un.)
+5. Connecte-toi en admin avec le lien de premier accès :
+   `https://cs2-playbook.<ton-sous-domaine>.workers.dev/api/auth/invite/<jeton>` (jeton transmis à part,
+   valable jusqu'au 2 novembre 2026 ; voir `migrations/0005_first_admin.sql`).
 
-Pour mettre à jour le site plus tard : `npm run deploy` à nouveau.
-Lien admin pour le site en ligne : `npm run admin-link -- --remote https://cs2-playbook.<ton-compte>.workers.dev`.
+Alternative depuis un PC : `npm run deploy` (connexion à Cloudflare dans le navigateur, puis construction et déploiement).
+
+## Modifier le site
+
+| Je veux… | Comment |
+|---|---|
+| Ajouter / changer des cartes, étiquettes, équipes, compétences, membres | Directement dans le site (menus et **Admin**) : rien à déployer |
+| Changer le code (nouvelle fonction, texte, couleur…) | Demande-le à Claude Code sur ce dépôt : il prépare une *pull request* ; tu cliques **Merge** sur GitHub → en ligne 1 à 2 minutes après |
+| Une petite retouche de texte | Sur GitHub, ouvre le fichier, icône crayon, modifie, **Commit changes** sur `main` → mis en ligne automatiquement |
+| Voir avant de publier | Chaque branche autre que `main` est construite par Cloudflare avec une adresse d'aperçu (visible dans la *pull request*) |
+| Annuler une mise en ligne | Cloudflare → ton Worker → **Deployments** → **Rollback** sur la version précédente |
+| Tester sur ton PC | `npm install` puis `npm run dev` (voir plus haut) |
+
+Ajouter une table ou une colonne : crée `migrations/000X_nom.sql` ; le site l'applique tout seul après le déploiement.
+
+Sauvegarde de la base : Cloudflare → **Storage & Databases** → **D1** → `cs2-playbook` → **Time Travel** (retour
+dans le temps jusqu'à 30 jours, inclus dans l'offre gratuite), ou `npx wrangler d1 export cs2-playbook --remote --output sauvegarde.sql`.
 
 ## Connexion
 
@@ -159,7 +179,7 @@ teams ─< team_members (captain | coach | player) >─ members
 skill_groups ─< skills ─< team_skills (statut d'équipe) · member_skills (statut par joueur)
 ```
 
-Ajouter une migration : crée `migrations/0004_xxx.sql`, puis `npm run dev` (local) ou `npm run deploy` (en ligne)
+Ajouter une migration : crée `migrations/000X_xxx.sql` ; `npm run dev` (local) ou le prochain déploiement (en ligne)
 l'appliquent automatiquement.
 
 ---
