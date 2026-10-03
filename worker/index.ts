@@ -24,6 +24,33 @@ app.use(async (c, next) => {
   c.header('x-robots-tag', 'noindex, nofollow')
 })
 
+/**
+ * Diagnostic public (sans données personnelles) : base reliée, migrations appliquées,
+ * lien admin de premier accès encore actif. À ouvrir en cas de problème de connexion.
+ */
+app.get('/health', async (c) => {
+  if (!c.env.DB) {
+    return c.json({ ok: false, error: "Aucune base D1 n'est reliée au Worker (liaison « DB » manquante)." }, 500)
+  }
+  try {
+    await ensureMigrated(c.env.DB)
+    const migrations = (await c.env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()).results.map((r) => r.name)
+    const admin = await c.env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM members WHERE role = 'admin') AS connected,
+              (SELECT COUNT(*) FROM allowlist WHERE role = 'admin' AND invite_hash IS NOT NULL AND invite_expires_at > ?) AS active_links`,
+    ).bind(new Date().toISOString()).first<{ connected: number; active_links: number }>()
+    return c.json({
+      ok: true,
+      migrations,
+      admins_connected: admin?.connected ?? 0,
+      admin_links_active: admin?.active_links ?? 0,
+      discord: !!(c.env.DISCORD_CLIENT_ID && c.env.DISCORD_CLIENT_SECRET),
+    })
+  } catch (e) {
+    return c.json({ ok: false, error: String((e as Error)?.message ?? e) }, 500)
+  }
+})
+
 // La base se met à jour toute seule après chaque déploiement.
 app.use(async (c, next) => {
   await ensureMigrated(c.env.DB)
