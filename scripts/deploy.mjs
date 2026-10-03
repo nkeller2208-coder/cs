@@ -39,7 +39,17 @@ await live(NODE, [VITE, 'build'])
 console.log('→ Migrations de la base en ligne…')
 migrate({ remote: true })
 console.log('→ Déploiement…')
-const out = wrangler(['deploy'], { quiet: true })
+let out
+try {
+  out = wrangler(['deploy'], { quiet: true })
+} catch (e) {
+  console.error(`
+Le déploiement a échoué. Cause la plus fréquente au premier déploiement : ton compte n'a pas encore
+d'adresse workers.dev. Ouvre https://dash.cloudflare.com → « Workers & Pages » (menu de gauche),
+choisis un sous-domaine quand il est proposé, puis relance : npm run deploy
+`)
+  throw e
+}
 process.stdout.write(out)
 const url = out.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0]
 
