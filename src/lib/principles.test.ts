@@ -10,7 +10,7 @@ const principle = (p: Partial<Principle>): Principle => ({
 const card = (p: Partial<Card>): Card => ({
   id: 1, title: 'c', description: '', map_id: 1, side: 'T', risk_id: null, status: 'published', review_comment: null,
   review_by: null, author_id: 'a', created_at: '', updated_by: null, updated_at: '', media: [], role_ids: [],
-  category_ids: [], zone_ids: [], utility_ids: [], economy_ids: [], round_type_ids: [], ...p,
+  category_ids: [], zone_ids: [], utility_ids: [], economy_ids: [], round_type_ids: [], kind: 'strategy', role_actions: [], stuff_links: [], source_id: null, ...p,
 })
 
 describe('principes', () => {

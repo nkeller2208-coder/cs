@@ -1,7 +1,7 @@
 import { api } from './http'
 import type {
-  AllowlistEntry, Card, CardStatus, HistoryEntry, LastValues, Me, Media, Member, Principle, Side, SkillsData,
-  SkillStatus, Tags, TagTable, Team, TeamRole,
+  AllowlistEntry, Card, CardKind, CardLearning, CardStatus, Profile, RoleAction, StuffLink, TeamCardStatus, TeamLearning, HistoryEntry, LastValues, Me, Media, Member, Principle, Side,
+  Tags, TagTable, Team, TeamRole,
 } from './types'
 import { byOrder } from './text'
 
@@ -40,6 +40,8 @@ export async function fetchTags(): Promise<Tags> {
     utilities: t.utilities.sort(byOrder),
     economies: t.economies.sort(byOrder),
     round_types: t.round_types.sort(byOrder),
+    role_actions: (t.role_actions ?? []).sort(byOrder),
+    sources: (t.sources ?? []).sort(byOrder),
     principle_themes: t.principle_themes.sort(byOrder),
     skill_groups: t.skill_groups.sort(byOrder),
   }
@@ -51,6 +53,8 @@ export const updateTag = (table: TagTable | 'skills', id: number, values: Record
 export const deleteTag = (table: TagTable | 'skills', id: number) => api.del(`/tags/${table}/${id}`)
 export const reorderTags = (table: TagTable | 'skills', ids: number[]) => api.post(`/tags/${table}/reorder`, { ids })
 export const mergeZones = (source: number, target: number) => api.post('/tags/zones/merge', { source, target })
+/** Ajouter une source depuis le formulaire (renvoie la source existante si le nom existe déjà). */
+export const proposeSource = (name: string) => api.post<Tags['sources'][number]>('/tags/sources/propose', { name: name.trim() })
 /** Un membre propose une zone : utilisable tout de suite, marquée « à valider ». */
 export const proposeZone = (mapId: number, name: string, _userId?: string) =>
   api.post<Tags['zones'][number]>('/tags/zones/propose', { map_id: mapId, name: name.trim() })
@@ -61,11 +65,13 @@ export const fetchCards = () => api.get<Card[]>('/cards')
 
 export interface CardPayload {
   id?: number | null
+  kind: CardKind
   title: string
   description: string
   map_id: number | null
   side: Side | null
   risk_id: number | null
+  source_id?: number | null
   status: CardStatus
   media: Media[]
   role_ids: number[]
@@ -74,6 +80,8 @@ export interface CardPayload {
   utility_ids: number[]
   economy_ids: number[]
   round_type_ids: number[]
+  role_actions?: RoleAction[]
+  stuff_links?: StuffLink[]
   remember?: boolean
 }
 
@@ -81,6 +89,13 @@ export const saveCard = async (p: CardPayload) => (await api.post<{ id: number }
 export const deleteCard = (id: number) => api.del(`/cards/${id}`)
 export const flagCard = (id: number, comment: string) => api.post(`/cards/${id}/flag`, { comment })
 export const resolveCardReview = (id: number) => api.post(`/cards/${id}/resolve`)
+/** Ma note (1 à 5 ; 0 l'efface). */
+export const rateCard = (id: number, rating: number) => api.put(`/learning/cards/${id}/rating`, { rating })
+/** Statut d'une stratégie pour une équipe (« none » : non travaillée). */
+export const setTeamCardStatus = (id: number, teamId: number, status: TeamCardStatus | 'none') =>
+  api.put(`/learning/cards/${id}/team`, { team_id: teamId, status })
+export const fetchCardLearning = (id: number) => api.get<CardLearning>(`/learning/cards/${id}`)
+export const fetchTeamLearning = (teamId: number) => api.get<TeamLearning>(`/learning/teams/${teamId}`)
 export const fetchHistory = (cardId: number) => api.get<HistoryEntry[]>(`/cards/${cardId}/history`)
 
 /** Cartes qui utilisent déjà l'un de ces liens (anti-doublon). */
@@ -101,6 +116,9 @@ export const deleteDemoCards = (prefix: string) => api.del(`/cards?prefix=${enco
 export const fetchMembers = () => api.get<Member[]>('/members')
 export const updateMember = (id: string, values: Partial<Pick<Member, 'role' | 'display_name'>>) => api.patch(`/members/${id}`, values)
 export const removeMember = (id: string) => api.del(`/members/${id}`)
+export const fetchProfile = () => api.get<Profile>('/members/me/profile')
+export const setMyRoles = (roleIds: number[]) => api.put('/members/me/roles', { role_ids: roleIds })
+export const changePassword = (current: string, password: string) => api.post('/auth/password', { current, password })
 export const fetchLastValues = (_userId?: string) => api.get<LastValues>('/members/me/last-values')
 
 export const fetchAllowlist = () => api.get<AllowlistEntry[]>('/allowlist')
@@ -133,14 +151,6 @@ export const savePrinciple = async (p: PrinciplePayload) => (await api.post<{ id
 export const deletePrinciple = (id: number) => api.del(`/principles/${id}`)
 export const linkPrincipleCard = (principleId: number, cardId: number, _userId?: string) => api.put(`/principles/${principleId}/cards/${cardId}`)
 export const unlinkPrincipleCard = (principleId: number, cardId: number) => api.del(`/principles/${principleId}/cards/${cardId}`)
-
-// ------------------------------------------------------------ Compétences
-
-export const fetchSkills = (teamId?: number | null) => api.get<SkillsData>(`/skills${teamId ? `?team=${teamId}` : ''}`)
-export const setTeamSkill = (skillId: number, teamId: number, status: SkillStatus) =>
-  api.put<{ ok: true; propagated: number }>(`/skills/${skillId}/team`, { status, team_id: teamId })
-export const setMemberSkill = (skillId: number, memberId: string, status: SkillStatus) =>
-  api.put(`/skills/${skillId}/members/${memberId}`, { status })
 
 // ------------------------------------------------------------ Équipes
 

@@ -17,6 +17,8 @@ const tags: Tags = {
   utilities: [{ id: 1, name: 'Smoke', sort_order: 1, archived: false }],
   economies: [{ id: 1, name: 'Eco', sort_order: 1, archived: false }],
   round_types: [],
+  role_actions: [],
+  sources: [{ id: 1, name: 'Devil', url: '', sort_order: 1, archived: false }, { id: 2, name: 'Le Repère', url: '', sort_order: 2, archived: false }],
   principle_themes: [], skill_groups: [],
 }
 
@@ -35,7 +37,25 @@ describe('import CSV', () => {
       'Test;https://youtu.be/abcdefghijk;mirage;t;awp;stuff;palace;PASSIF;smoke'
     const [row] = analyzeRows(parseCsv(csv).rows, tags, true)
     expect(row.errors).toEqual([])
-    expect(row.payload).toMatchObject({ map_id: 1, side: 'T', role_ids: [20], category_ids: [1], zone_ids: [5], risk_id: 1, utility_ids: [1] })
+    // Ancien format (catégorie « Stuff ») : devient une carte stuff, sans la catégorie.
+    expect(row.payload).toMatchObject({ kind: 'stuff', map_id: 1, side: 'T', role_ids: [20], category_ids: [], zone_ids: [5], risk_id: 1, utility_ids: [1] })
+  })
+
+  it('colonne « type » : stratégie ou stuff, avec leurs champs obligatoires', () => {
+    const csv = [
+      'type;titre;description;map;side;categories;utilitaires',
+      'Stratégie;A;x;Mirage;CT;;',
+      'stuff;B;x;Mirage;T;;',
+      'strat;C;x;Mirage;CT;Position;smoke',
+      'bidon;D;x;Mirage;CT;Position;',
+    ].join('\n')
+    const [a, b, c, d] = analyzeRows(parseCsv(csv).rows, tags, true)
+    expect(a.errors.join(' ')).toContain('catégorie est obligatoire')
+    expect(b.errors.join(' ')).toContain("type d'utilitaire")
+    expect(c.errors).toEqual([])
+    expect(c.payload).toMatchObject({ kind: 'strategy', utility_ids: [] })
+    expect(c.warnings.join(' ')).toContain('Utilitaires ignorés')
+    expect(d.errors.join(' ')).toContain('Type inconnu')
   })
 
   it('signale les étiquettes inconnues et les zones à créer', () => {
@@ -47,6 +67,16 @@ describe('import CSV', () => {
     expect(row.newZones).toEqual(['Nouvelle'])
     const [strict] = analyzeRows(parseCsv(csv).rows, tags, false)
     expect(strict.errors.join(' ')).toContain('Zone inconnue')
+  })
+
+  it('colonne « source » : reconnue sans tenir compte des accents ; inconnue créée ou refusée', () => {
+    const csv = ['type;titre;description;map;side;utilitaires;source', 'stuff;A;x;Mirage;T;Smoke;le repere', 'stuff;B;x;Mirage;T;Smoke;Inconnu'].join('\n')
+    const [a, b] = analyzeRows(parseCsv(csv).rows, tags, true)
+    expect(a.payload?.source_id).toBe(2)
+    expect(b.errors).toEqual([])
+    expect(b.newSource).toBe('Inconnu')
+    const [, strict] = analyzeRows(parseCsv(csv).rows, tags, false)
+    expect(strict.errors.join(' ')).toContain('Source inconnue')
   })
 
   it('refuse un fichier sans colonne titre', () => {

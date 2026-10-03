@@ -94,7 +94,9 @@ export function parseMedia(raw: string): ParsedMedia | null {
     }
   }
 
-  const kind: MediaKind = IMAGE_EXT.test(u.pathname) ? 'image' : 'link'
+  // Images servies par Cloudflare Images : …/image.jpg/public (le nom du format suit l'extension).
+  const cfImage = host === 'imagedelivery.net' || u.pathname.includes('/cdn-cgi/imagedelivery/')
+  const kind: MediaKind = IMAGE_EXT.test(u.pathname) || cfImage ? 'image' : 'link'
   u.hash = ''
   return { kind, url: u.toString(), url_key: genericKey(u) }
 }

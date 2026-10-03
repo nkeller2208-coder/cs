@@ -12,6 +12,8 @@ const tags: Tags = {
   utilities: [t(1, 'Smoke')],
   economies: [t(1, 'Full buy')],
   round_types: [t(1, 'Rush')],
+  role_actions: [t(1, 'Entry'), t(2, 'Trade'), t(3, 'Support'), t(4, 'Lurk'), t(5, 'Fight'), t(6, 'Non concerné')].map((a) => ({ ...a, involved: a.name !== 'Non concerné', color: '#000000' })),
+  sources: [],
   principle_themes: [], skill_groups: [],
 }
 
@@ -28,11 +30,20 @@ describe('cartes de démo', () => {
   })
   it('ne référence que des étiquettes cohérentes (rôles du side, zones de la map)', () => {
     const first = cards[0].payload
-    expect(first).toMatchObject({ side: 'T', role_ids: [10], zone_ids: [100], utility_ids: [1] })
+    expect(first).toMatchObject({ kind: 'stuff', side: 'T', role_ids: [10], zone_ids: [100], utility_ids: [1], category_ids: [] })
     for (const c of cards) {
       for (const r of c.payload.role_ids) expect(tags.roles.find((x) => x.id === r)!.side).toBe(c.payload.side)
       for (const z of c.payload.zone_ids) expect(tags.zones.find((x) => x.id === z)!.map_id).toBe(c.payload.map_id)
     }
+  })
+  it('sépare stratégies et stuffs ; actions des rôles et stuff rattaché', () => {
+    expect(cards.filter((c) => c.payload.kind === 'stuff')).toHaveLength(3)
+    const rush = cards.find((c) => c.payload.title.includes('Rush B'))!
+    expect(rush.payload.role_actions!.length).toBeGreaterThan(0)
+    expect(rush.stuffs).toEqual([{ title: DEMO_PREFIX + 'Smoke Window depuis T Spawn', role_id: expect.any(Number) }])
+    // Le stuff rattaché est créé avant la stratégie.
+    const order = cards.map((c) => c.payload.title)
+    expect(order.indexOf(DEMO_PREFIX + 'Smoke Window depuis T Spawn')).toBeLessThan(order.indexOf(rush.payload.title))
   })
   it('rattache les types de round aux cartes « Round lancé »', () => {
     const rush = cards.find((c) => c.payload.title.includes('Rush B'))!.payload

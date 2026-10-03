@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { requireAdmin } from './auth'
 import { listMembers, sqlError } from './tags'
-import { type AppEnv, all, fail, first, randomToken, sha256 } from './env'
+import { type AppEnv, all, fail, first, ids, randomToken, sha256 } from './env'
 
 const INVITE_DAYS = 7
 
@@ -12,6 +12,38 @@ members.get('/', async (c) => c.json(await listMembers(c.env.DB)))
 members.get('/me/last-values', async (c) => {
   const row = await first<{ last_values: string }>(c.env.DB, 'SELECT last_values FROM members WHERE id = ?', c.get('me').id)
   return c.json(JSON.parse(row?.last_values || '{}'))
+})
+
+/** Espace perso : équipes et rôles en jeu du membre connecté. */
+members.get('/me/profile', async (c) => {
+  const me = c.get('me')
+  const db = c.env.DB
+  const [roles, teams] = await db.batch([
+    db.prepare('SELECT role_id FROM member_roles WHERE member_id = ?').bind(me.id),
+    db.prepare(
+      `SELECT t.id, t.name, tm.role FROM team_members tm JOIN teams t ON t.id = tm.team_id
+        WHERE tm.member_id = ? ORDER BY t.name COLLATE NOCASE`,
+    ).bind(me.id),
+  ])
+  return c.json({
+    role_ids: (roles.results as { role_id: number }[]).map((r) => r.role_id),
+    teams: teams.results,
+  })
+})
+
+/** Mes rôles en jeu (Pivot B, AWP…) : mis en avant sur les stratégies. */
+members.put('/me/roles', async (c) => {
+  const me = c.get('me')
+  const list = ids((await c.req.json<{ role_ids?: unknown }>()).role_ids).slice(0, 20)
+  if (list.length) {
+    const ok = await all(c.env.DB, `SELECT id FROM roles WHERE id IN (${list.map(() => '?').join(',')})`, ...list)
+    if (ok.length !== list.length) fail(400, 'Rôle inconnu')
+  }
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM member_roles WHERE member_id = ?').bind(me.id),
+    ...list.map((r) => c.env.DB.prepare('INSERT INTO member_roles (member_id, role_id) VALUES (?, ?)').bind(me.id, r)),
+  ])
+  return c.json({ ok: true })
 })
 
 /** Chacun peut changer son pseudo ; l'admin peut aussi changer le rôle des autres. */

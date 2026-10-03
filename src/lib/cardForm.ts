@@ -1,4 +1,4 @@
-import type { Card, CardStatus, LastValues, Side, Tags } from './types'
+import type { Card, CardKind, CardStatus, LastValues, RoleAction, Side, StuffLink, Tags } from './types'
 import type { CardPayload } from './api'
 import { describeMedia } from './media'
 import { filtersFromParams } from './filters'
@@ -7,6 +7,7 @@ import type { FormMedia } from '../components/MediaField'
 
 export interface FormState {
   id: number | null
+  kind: CardKind
   status: CardStatus
   media: FormMedia[]
   map_id: number | null
@@ -16,19 +17,24 @@ export interface FormState {
   category_ids: number[]
   utility_ids: number[]
   risk_id: number | null
+  source_id: number | null
   economy_ids: number[]
   round_type_ids: number[]
+  /** Stratégie : action de chaque rôle (au plus une par rôle). */
+  role_actions: RoleAction[]
+  /** Stratégie : stuffs rattachés, dans l'ordre. */
+  stuff_links: StuffLink[]
   title: string
   titleTouched: boolean
   description: string
 }
 
 export const EMPTY_FORM: FormState = {
-  id: null, status: 'draft', media: [], map_id: null, side: null, role_ids: [], zone_ids: [], category_ids: [],
+  id: null, kind: 'strategy', status: 'draft', role_actions: [], stuff_links: [], source_id: null, media: [], map_id: null, side: null, role_ids: [], zone_ids: [], category_ids: [],
   utility_ids: [], risk_id: null, economy_ids: [], round_type_ids: [], title: '', titleTouched: false, description: '',
 }
 
-export type FormErrors = Partial<Record<'media' | 'title' | 'map' | 'side' | 'category', string>>
+export type FormErrors = Partial<Record<'media' | 'title' | 'map' | 'side' | 'category' | 'utility', string>>
 
 export const TITLE_MAX = 100
 
@@ -37,15 +43,22 @@ export function validate(f: FormState): FormErrors {
   if (!f.media.length && !f.description.trim()) e.media = 'Ajoute au moins un lien média, ou une description plus bas.'
   if (!f.map_id) e.map = 'Choisis une map.'
   if (!f.side) e.side = 'Choisis un side.'
-  if (!f.category_ids.length) e.category = 'Coche au moins une catégorie.'
+  if (f.kind === 'strategy' && !f.category_ids.length) e.category = 'Coche au moins une catégorie.'
+  if (f.kind === 'stuff' && !f.utility_ids.length) e.utility = "Choisis le type d'utilitaire (smoke, flash…)."
   if (!f.title.trim()) e.title = 'Le titre est obligatoire.'
   else if (f.title.length > TITLE_MAX) e.title = `${TITLE_MAX} caractères maximum.`
   return e
 }
 
-/** Le type d'utilitaire n'est proposé que si une catégorie « Stuff » est cochée. */
-export function showsUtility(f: Pick<FormState, 'category_ids'>, tags: Tags): boolean {
-  return tags.categories.some((c) => c.shows_utility && f.category_ids.includes(c.id))
+/** Le type d'utilitaire décrit un stuff (une stratégie référence ses stuffs à la place). */
+export function showsUtility(f: Pick<FormState, 'kind'>, _tags?: Tags): boolean {
+  return f.kind === 'stuff'
+}
+
+/** Rôles concernés par une stratégie : ceux dont l'action n'est pas « Non concerné ». */
+export function involvedRoles(actions: RoleAction[], tags: Tags): number[] {
+  const involved = new Set(tags.role_actions.filter((a) => a.involved).map((a) => a.id))
+  return actions.filter((a) => involved.has(a.action_id)).map((a) => a.role_id)
 }
 
 /** Le type de round n'est proposé que si une catégorie « Round lancé » est cochée. */
@@ -61,25 +74,33 @@ export function reconcile(f: FormState, tags: Tags): FormState {
     ...f,
     role_ids: f.role_ids.filter((id) => roleOk.has(id)),
     zone_ids: f.zone_ids.filter((id) => zoneOk.has(id)),
+    role_actions: f.role_actions.filter((a) => roleOk.has(a.role_id)),
+    stuff_links: f.stuff_links.map((l) => (l.role_id && !roleOk.has(l.role_id) ? { ...l, role_id: null } : l)),
   }
 }
 
 export function toPayload(f: FormState, status: CardStatus, tags: Tags): CardPayload {
+  const strategy = f.kind === 'strategy'
   return {
     id: f.id,
+    kind: f.kind,
     title: f.title.trim().slice(0, TITLE_MAX),
     description: f.description,
     map_id: f.map_id,
     side: f.side,
     risk_id: f.risk_id,
+    source_id: f.source_id,
     status,
     media: f.media.map(({ url, kind, url_key }) => ({ url, kind, url_key })),
-    role_ids: f.role_ids,
+    // Stratégie : rôles concernés déduits des actions (s'il y en a) ; stuff : rôles « lancé par ».
+    role_ids: strategy && f.role_actions.length ? involvedRoles(f.role_actions, tags) : f.role_ids,
     category_ids: f.category_ids,
     zone_ids: f.zone_ids,
-    utility_ids: showsUtility(f, tags) ? f.utility_ids : [],
+    utility_ids: showsUtility(f) ? f.utility_ids : [],
     economy_ids: f.economy_ids,
     round_type_ids: showsRoundType(f, tags) ? f.round_type_ids : [],
+    role_actions: strategy ? f.role_actions : [],
+    stuff_links: strategy ? f.stuff_links : [],
     remember: status !== 'draft',
   }
 }
@@ -88,7 +109,11 @@ let seq = 0
 export function formFromCard(c: Card): FormState {
   return {
     id: c.id,
+    kind: c.kind,
     status: c.status,
+    role_actions: c.role_actions,
+    stuff_links: c.stuff_links,
+    source_id: c.source_id ?? null,
     media: c.media.map((m) => {
       const p = describeMedia(m)
       return { ...p, url_key: m.url_key, uid: `c${c.id}-${seq++}`, startInput: p.start ? formatTimestamp(p.start) : '' }
@@ -120,6 +145,8 @@ export function formFromParams(params: URLSearchParams, tags: Tags): FormState {
   return reconcile(
     {
       ...EMPTY_FORM,
+      kind: params.get('kind') === 'stuff' ? 'stuff' : 'strategy',
+      stuff_links: Number(params.get('stuff')) > 0 ? [{ stuff_id: Number(params.get('stuff')), role_id: null }] : [],
       map_id: one(f.map),
       side: one(f.side),
       role_ids: f.role,
@@ -127,6 +154,7 @@ export function formFromParams(params: URLSearchParams, tags: Tags): FormState {
       category_ids: f.cat,
       utility_ids: f.util,
       risk_id: one(f.risk),
+      source_id: one(f.src),
       economy_ids: f.eco,
       round_type_ids: f.round,
     },
@@ -147,6 +175,7 @@ export function applyLastValues(f: FormState, v: LastValues, tags: Tags): FormSt
       category_ids: alive(v.category_ids, tags.categories),
       utility_ids: alive(v.utility_ids, tags.utilities),
       risk_id: v.risk_id ?? null,
+      source_id: v.source_id ?? f.source_id,
       economy_ids: alive(v.economy_ids, tags.economies),
       round_type_ids: alive(v.round_type_ids, tags.round_types),
     },
@@ -154,9 +183,21 @@ export function applyLastValues(f: FormState, v: LastValues, tags: Tags): FormSt
   )
 }
 
-/** « Enregistrer et en créer une autre » : garde map, side, rôles et zones. */
+/** « Enregistrer et en créer une autre » : garde le type, la map, le side, les rôles, les zones et la source. */
 export function nextInSeries(f: FormState): FormState {
-  return { ...EMPTY_FORM, map_id: f.map_id, side: f.side, role_ids: f.role_ids, zone_ids: f.zone_ids }
+  return { ...EMPTY_FORM, kind: f.kind, map_id: f.map_id, side: f.side, role_ids: f.role_ids, zone_ids: f.zone_ids, source_id: f.source_id }
+}
+
+/** Changer d'action pour un rôle (null : retirer l'action). */
+export function setRoleAction(f: FormState, roleId: number, actionId: number | null): FormState {
+  const rest = f.role_actions.filter((a) => a.role_id !== roleId)
+  if (actionId == null) return { ...f, role_actions: rest }
+  const note = f.role_actions.find((a) => a.role_id === roleId)?.note ?? ''
+  return { ...f, role_actions: [...rest, { role_id: roleId, action_id: actionId, note }] }
+}
+
+export function setRoleNote(f: FormState, roleId: number, note: string): FormState {
+  return { ...f, role_actions: f.role_actions.map((a) => (a.role_id === roleId ? { ...a, note: note.slice(0, 200) } : a)) }
 }
 
 export function hasContent(f: FormState): boolean {
@@ -178,7 +219,10 @@ export function localKey(userId: string, cardId: number | 'new') {
 export function loadLocal(key: string): { state: FormState; savedAt: string } | null {
   try {
     const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const saved = JSON.parse(raw) as { state: FormState; savedAt: string }
+    // Saisie enregistrée par une version précédente du site : champs ajoutés depuis complétés.
+    return { ...saved, state: { ...EMPTY_FORM, ...saved.state } }
   } catch {
     return null
   }

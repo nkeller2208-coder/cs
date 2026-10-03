@@ -1,8 +1,8 @@
-import type { Card, Side, Tags } from './types'
+import type { Card, CardKind, Side, Tags } from './types'
 import { normalize } from './text'
 
 /** Familles d'étiquettes filtrables : ET entre familles, OU au sein d'une famille. */
-export const FAMILIES = ['map', 'side', 'role', 'zone', 'cat', 'util', 'round', 'risk', 'eco'] as const
+export const FAMILIES = ['map', 'side', 'role', 'act', 'zone', 'cat', 'util', 'round', 'risk', 'eco', 'src'] as const
 export type Family = (typeof FAMILIES)[number]
 
 export type SortKey = 'recent' | 'oldest' | 'alpha'
@@ -10,23 +10,42 @@ export type SortKey = 'recent' | 'oldest' | 'alpha'
 export type ViewKey = 'all' | 'review' | 'drafts' | 'mine'
 
 export interface Filters {
+  /** Rubrique affichée (fixée par la page, pas dans l'URL). */
+  kind: CardKind
   map: number[]
   side: Side[]
   role: number[]
+  /** Actions des rôles (stratégies) : Lurk, Support… */
+  act: number[]
   zone: number[]
   cat: number[]
   util: number[]
   round: number[]
   risk: number[]
   eco: number[]
+  /** Source (Devil, Le Repère…). */
+  src: number[]
   q: string
   sort: SortKey
   view: ViewKey
+  /** « Mes rôles » : uniquement les cartes qui concernent un de mes rôles en jeu. */
+  mine: boolean
+  /** « À apprendre » : stratégies que l'une de mes équipes doit apprendre. */
+  todo: boolean
+  /** « Pas encore notées » : cartes que je n'ai pas encore notées. */
+  unrated: boolean
+}
+
+/** Contexte de l'utilisateur pour le filtrage. */
+export interface FilterContext {
+  userId?: string
+  /** Rôles en jeu du membre (Espace perso). */
+  myRoleIds?: number[]
 }
 
 export const EMPTY_FILTERS: Filters = {
-  map: [], side: [], role: [], zone: [], cat: [], util: [], round: [], risk: [], eco: [],
-  q: '', sort: 'recent', view: 'all',
+  kind: 'strategy', map: [], side: [], role: [], act: [], zone: [], cat: [], util: [], round: [], risk: [], eco: [], src: [],
+  q: '', sort: 'recent', view: 'all', mine: false, todo: false, unrated: false,
 }
 
 /** Valeurs d'une carte pour une famille donnée. */
@@ -35,35 +54,43 @@ export function cardValues(card: Card, family: Family): (number | string)[] {
     case 'map': return card.map_id == null ? [] : [card.map_id]
     case 'side': return card.side ? [card.side] : []
     case 'role': return card.role_ids
+    case 'act': return (card.role_actions ?? []).map((a) => a.action_id)
     case 'zone': return card.zone_ids
     case 'cat': return card.category_ids
     case 'util': return card.utility_ids
     case 'round': return card.round_type_ids
     case 'risk': return card.risk_id == null ? [] : [card.risk_id]
     case 'eco': return card.economy_ids
+    case 'src': return card.source_id == null ? [] : [card.source_id]
   }
 }
 
 // ---------------------------------------------------------------- URL
 
-export function filtersFromParams(params: URLSearchParams): Filters {
+export function filtersFromParams(params: URLSearchParams, kind: CardKind = 'strategy'): Filters {
   const nums = (k: string) =>
     (params.get(k) ?? '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0)
   const sort = params.get('sort')
   const view = params.get('view')
   return {
+    kind,
     map: nums('map'),
     side: (params.get('side') ?? '').split(',').filter((s): s is Side => s === 'CT' || s === 'T'),
     role: nums('role'),
+    act: nums('act'),
     zone: nums('zone'),
     cat: nums('cat'),
     util: nums('util'),
     round: nums('round'),
     risk: nums('risk'),
     eco: nums('eco'),
+    src: nums('src'),
     q: params.get('q') ?? '',
     sort: sort === 'oldest' || sort === 'alpha' ? sort : 'recent',
     view: view === 'review' || view === 'drafts' || view === 'mine' ? view : 'all',
+    mine: params.get('mesroles') === '1',
+    todo: params.get('aapprendre') === '1',
+    unrated: params.get('nonnotees') === '1',
   }
 }
 
@@ -76,11 +103,14 @@ export function filtersToParams(f: Filters): URLSearchParams {
   if (f.q.trim()) p.set('q', f.q)
   if (f.sort !== 'recent') p.set('sort', f.sort)
   if (f.view !== 'all') p.set('view', f.view)
+  if (f.mine) p.set('mesroles', '1')
+  if (f.todo) p.set('aapprendre', '1')
+  if (f.unrated) p.set('nonnotees', '1')
   return p
 }
 
 export function activeFilterCount(f: Filters): number {
-  return FAMILIES.reduce((n, fam) => n + f[fam].length, 0) + (f.q.trim() ? 1 : 0) + (f.view !== 'all' ? 1 : 0)
+  return FAMILIES.reduce((n, fam) => n + f[fam].length, 0) + (f.q.trim() ? 1 : 0) + (f.view !== 'all' ? 1 : 0) + (f.mine ? 1 : 0) + (f.todo ? 1 : 0) + (f.unrated ? 1 : 0)
 }
 
 /**
@@ -131,17 +161,28 @@ function matchesFamily(card: Card, f: Filters, fam: Family): boolean {
   return selected.some((v) => values.includes(v))
 }
 
+/** Rubrique (stratégies / stuff) et « mes rôles » : conditions préalables à tout le reste. */
+function inScope(card: Card, f: Filters, ctx: FilterContext): boolean {
+  if ((card.kind ?? 'strategy') !== f.kind) return false
+  if (f.mine && !card.role_ids.some((r) => ctx.myRoleIds?.includes(r))) return false
+  if (f.todo && !card.learning?.some((l) => l.status === 'to_learn')) return false
+  if (f.unrated && card.my_rating) return false
+  return matchesView(card, f.view, ctx.userId) && matchesQuery(card, f.q)
+}
+
+const asCtx = (c: string | undefined | FilterContext): FilterContext => (typeof c === 'object' ? c : { userId: c })
+
 /** Cartes correspondant à toutes les familles sauf `except` (pour les compteurs). */
-function baseMatch(card: Card, f: Filters, userId: string | undefined, except?: Family): boolean {
-  if (!matchesView(card, f.view, userId) || !matchesQuery(card, f.q)) return false
+function baseMatch(card: Card, f: Filters, ctx: FilterContext, except?: Family): boolean {
+  if (!inScope(card, f, ctx)) return false
   for (const fam of FAMILIES) {
     if (fam !== except && !matchesFamily(card, f, fam)) return false
   }
   return true
 }
 
-export function applyFilters(cards: Card[], f: Filters, userId: string | undefined): Card[] {
-  const out = cards.filter((c) => baseMatch(c, f, userId))
+export function applyFilters(cards: Card[], f: Filters, ctx: string | undefined | FilterContext): Card[] {
+  const out = cards.filter((c) => baseMatch(c, f, asCtx(ctx)))
   const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
   switch (f.sort) {
     // L'id départage les cartes créées au même instant (import, démo) : ordre stable.
@@ -157,10 +198,11 @@ export type FacetCounts = Record<Family, Map<number | string, number>>
  * Compteur par option : nombre de cartes qu'on obtiendrait en ajoutant cette
  * option, compte tenu des filtres des autres familles.
  */
-export function facetCounts(cards: Card[], f: Filters, userId: string | undefined): FacetCounts {
+export function facetCounts(cards: Card[], f: Filters, ctx: string | undefined | FilterContext): FacetCounts {
   const counts = Object.fromEntries(FAMILIES.map((fam) => [fam, new Map()])) as FacetCounts
+  const c = asCtx(ctx)
   for (const card of cards) {
-    if (!matchesView(card, f.view, userId) || !matchesQuery(card, f.q)) continue
+    if (!inScope(card, f, c)) continue
     // Nombre de familles non satisfaites : si 0, la carte compte partout ;
     // si 1, elle ne compte que pour la famille fautive.
     const failing = FAMILIES.filter((fam) => !matchesFamily(card, f, fam))
@@ -174,8 +216,11 @@ export function facetCounts(cards: Card[], f: Filters, userId: string | undefine
   return counts
 }
 
-export function viewCounts(cards: Card[], userId: string | undefined): Record<ViewKey, number> {
+export function viewCounts(cards: Card[], userId: string | undefined, kind: CardKind = 'strategy'): Record<ViewKey, number> {
   const out: Record<ViewKey, number> = { all: 0, review: 0, drafts: 0, mine: 0 }
-  for (const c of cards) for (const v of ['all', 'review', 'drafts', 'mine'] as const) if (matchesView(c, v, userId)) out[v]++
+  for (const c of cards) {
+    if ((c.kind ?? 'strategy') !== kind) continue
+    for (const v of ['all', 'review', 'drafts', 'mine'] as const) if (matchesView(c, v, userId)) out[v]++
+  }
   return out
 }

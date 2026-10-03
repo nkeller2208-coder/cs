@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { canEditCard, EMPTY_TAGS, qk, useCards, useLastValues, useTagIndex, useTags } from '../hooks/data'
+import { canEditCard, EMPTY_TAGS, qk, useCards, useLastValues, useMyRoleIds, useTagIndex, useTags } from '../hooks/data'
 import { useMember } from '../hooks/auth'
-import { deleteCard, proposeZone, saveCard } from '../lib/api'
+import { deleteCard, proposeSource, proposeZone, saveCard } from '../lib/api'
 import { errorMessage } from '../lib/http'
 import {
   applyLastValues, clearLocal, formFromCard, formFromDuplicate, formFromParams, hasContent, loadLocal,
-  localKey, nextInSeries, reconcile, saveLocal, showsRoundType, showsUtility, signature, TITLE_MAX, toPayload, validate,
+  localKey, nextInSeries, reconcile, saveLocal, setRoleAction, setRoleNote, showsRoundType, showsUtility, signature, TITLE_MAX,
+  toPayload, validate,
   type FormErrors, type FormState,
 } from '../lib/cardForm'
 import { normalize } from '../lib/text'
-import type { Card, CardStatus, Side, Tags } from '../lib/types'
+import type { Card, CardKind, CardStatus, Side, Tags } from '../lib/types'
 import { MediaField } from '../components/MediaField'
 import { MarkdownEditor } from '../components/Markdown'
+import { RoleActionsEditor, StuffLinksEditor } from '../components/StrategyPieces'
 import { Button, Chip, Field, Spinner, cx, inputClass } from '../components/ui'
 import { useToast } from '../components/toast'
 
@@ -124,8 +126,11 @@ function CardForm({
     map: useRef<HTMLDivElement>(null),
     side: useRef<HTMLDivElement>(null),
     category: useRef<HTMLDivElement>(null),
+    utility: useRef<HTMLDivElement>(null),
     title: useRef<HTMLDivElement>(null),
   }
+  const myRoleIds = useMyRoleIds()
+  const home = form.kind === 'stuff' ? '/stuff' : '/'
 
   const set = useCallback(
     (patch: Partial<FormState> | ((f: FormState) => Partial<FormState>)) =>
@@ -182,7 +187,7 @@ function CardForm({
   // ---------------------------------------------------------------- envoi
 
   function focusFirstError(e: FormErrors) {
-    const order: (keyof FormErrors)[] = ['media', 'map', 'side', 'category', 'title']
+    const order: (keyof FormErrors)[] = ['media', 'map', 'side', 'utility', 'category', 'title']
     const first = order.find((k) => e[k])
     if (first) refs[first].current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -216,7 +221,7 @@ function CardForm({
 
       if (mode === 'draft') {
         toast('Brouillon enregistré (visible par toi seul)')
-        navigate('/?view=drafts')
+        navigate(`${home}?view=drafts`)
       } else if (mode === 'series') {
         toast(
           <span>
@@ -247,7 +252,9 @@ function CardForm({
         )
         const back = new URLSearchParams(location.search)
         back.delete('from')
-        navigate(`/${back.size ? `?${back}` : ''}`)
+        back.delete('kind')
+        back.delete('stuff')
+        navigate(`${home}${back.size ? `?${back}` : ''}`)
       }
     } catch (e) {
       toast(errorMessage(e), 'error')
@@ -267,7 +274,7 @@ function CardForm({
     }
     // Formulaire ouvert directement par son URL : pas de page précédente dans l'appli.
     if ((window.history.state as { idx?: number } | null)?.idx) navigate(-1)
-    else navigate(isEdit ? `/c/${source!.id}` : '/')
+    else navigate(isEdit ? `/c/${source!.id}` : home)
   }
 
   // Ctrl/Cmd + Entrée : publier
@@ -301,19 +308,25 @@ function CardForm({
     return parts.join(' · ')
   }, [lv, idx])
 
-  const utilityVisible = showsUtility(form, tags)
+  const strategy = form.kind === 'strategy'
+  const utilityVisible = showsUtility(form)
   const roundVisible = showsRoundType(form, tags)
-  // Numérotation des champs : les champs conditionnels décalent la suite.
-  const steps = ['util', 'round', 'risk', 'eco', 'title', 'desc'].filter(
-    (k) => (k !== 'util' || utilityVisible) && (k !== 'round' || roundVisible),
-  )
-  const n = (k: string) => 7 + steps.indexOf(k)
+  // Numérotation des champs selon le type de carte et les champs conditionnels.
+  const steps = (
+    strategy
+      ? ['media', 'source', 'map', 'side', 'roles', 'zones', 'cats', 'round', 'stuffs', 'risk', 'eco', 'title', 'desc']
+      : ['media', 'source', 'map', 'side', 'util', 'thrower', 'zones', 'cats', 'risk', 'eco', 'title', 'desc']
+  ).filter((k) => k !== 'round' || roundVisible)
+  const n = (k: string) => steps.indexOf(k) + 1
   const sideRoles = activeOrSelected(tags.roles.filter((r) => r.side === form.side), form.role_ids)
+  const switchKind = (kind: CardKind) => setForm((f) => ({ ...f, kind }))
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-5 pb-40">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-bold">{isEdit ? 'Modifier la carte' : 'Nouvelle carte'}</h1>
+        <h1 className="text-xl font-bold">
+          {isEdit ? (strategy ? 'Modifier la stratégie' : 'Modifier le stuff') : strategy ? 'Nouvelle stratégie' : 'Nouveau stuff'}
+        </h1>
         <AutosaveIndicator form={form} serverSavedAt={serverSavedAt} isEdit={isEdit} />
         <span className="flex-1" />
         {!isEdit && lastSummary && (
@@ -363,9 +376,34 @@ function CardForm({
           submit('publish')
         }}
       >
-        {/* 1. Médias */}
+        {/* Type de carte */}
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Type de carte">
+          {(
+            [
+              ['strategy', '🎯 Stratégie', 'Ce que fait l’équipe : rôles, timings, stuffs utilisés.'],
+              ['stuff', '💨 Stuff', 'Une grenade précise : smoke, flash, molotov…'],
+            ] as [CardKind, string, string][]
+          ).map(([k, label, hint]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={form.kind === k}
+              onClick={() => switchKind(k)}
+              className={cx(
+                'rounded-xl px-4 py-3 text-left ring-1 ring-inset transition',
+                form.kind === k ? 'bg-amber-500/15 ring-2 ring-amber-400' : 'bg-slate-900 ring-slate-700 hover:ring-slate-500',
+              )}
+            >
+              <span className="block font-semibold text-slate-50">{label}</span>
+              <span className="block text-xs text-slate-400">{hint}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Médias */}
         <div ref={refs.media}>
-          <Field label="1. Lien(s) média" hint="YouTube (Shorts et ?t= acceptés), Imgur, image directe ou tout autre lien." error={errors.media}>
+          <Field label={`${n('media')}. Lien(s) média`} hint="YouTube (Shorts et ?t= acceptés), Imgur, image directe ou tout autre lien." error={errors.media}>
             <MediaField
               media={form.media}
               onChange={(media) => setForm((f) => ({ ...f, media }))}
@@ -378,9 +416,14 @@ function CardForm({
           </Field>
         </div>
 
-        {/* 2. Map */}
+        {/* Source */}
+        <Field label={`${n('source')}. Source`} hint="D'où vient ce contenu. Pas dans la liste ? Choisis « + Ajouter une source… »." optional>
+          <SourcePicker tags={tags} value={form.source_id} onChange={(source_id) => setForm((f) => ({ ...f, source_id }))} />
+        </Field>
+
+        {/* Map */}
         <div ref={refs.map}>
-          <Field label="2. Map" error={errors.map}>
+          <Field label={`${n('map')}. Map`} error={errors.map}>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {activeOrSelected(tags.maps, form.map_id ? [form.map_id] : []).map((m) => (
                 <button
@@ -389,7 +432,7 @@ function CardForm({
                   aria-pressed={form.map_id === m.id}
                   onClick={() => set({ map_id: form.map_id === m.id ? null : m.id })}
                   className={cx(
-                    'relative h-16 overflow-hidden rounded-xl text-base font-bold tracking-wide uppercase ring-1 ring-inset transition',
+                    'relative h-14 overflow-hidden rounded-xl text-base font-bold tracking-wide uppercase ring-1 ring-inset transition',
                     form.map_id === m.id
                       ? 'bg-gradient-to-br from-amber-500/30 to-amber-700/20 text-amber-100 ring-2 ring-amber-400'
                       : 'bg-gradient-to-br from-slate-800 to-slate-900 text-slate-300 ring-slate-700 hover:text-white hover:ring-slate-500',
@@ -402,9 +445,9 @@ function CardForm({
           </Field>
         </div>
 
-        {/* 3. Side */}
+        {/* Side */}
         <div ref={refs.side}>
-          <Field label="3. Side" error={errors.side}>
+          <Field label={`${n('side')}. Side`} error={errors.side}>
             <div className="grid grid-cols-2 gap-3">
               {(['CT', 'T'] as Side[]).map((s) => (
                 <button
@@ -413,7 +456,7 @@ function CardForm({
                   aria-pressed={form.side === s}
                   onClick={() => set({ side: form.side === s ? null : s })}
                   className={cx(
-                    'h-16 rounded-xl text-2xl font-black ring-1 ring-inset transition',
+                    'h-14 rounded-xl text-2xl font-black ring-1 ring-inset transition',
                     s === 'CT'
                       ? form.side === s
                         ? 'bg-ct text-white ring-ct'
@@ -423,30 +466,69 @@ function CardForm({
                         : 'bg-t/10 text-amber-300 ring-t/40 hover:bg-t/20',
                   )}
                 >
-                  {s === 'CT' ? 'CT' : 'T'}
+                  {s}
                 </button>
               ))}
             </div>
           </Field>
         </div>
 
-        {/* 4. Rôles */}
-        <Field label="4. Rôles" optional>
-          {!form.side ? (
-            <p className="text-sm text-slate-500">Choisis d'abord un side.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {sideRoles.map((r) => (
-                <Chip key={r.id} selected={form.role_ids.includes(r.id)} tone={form.side === 'CT' ? 'ct' : 't'} onClick={() => toggle('role_ids', r.id)}>
-                  {r.name}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </Field>
+        {/* Stratégie : action de chaque rôle */}
+        {strategy && (
+          <Field
+            label={`${n('roles')}. Que fait chaque rôle ?`}
+            hint="Choisis l'action de chaque rôle (re-clique pour l'enlever). « Non concerné » : le rôle ne participe pas."
+            optional
+          >
+            {!form.side ? (
+              <p className="text-sm text-slate-500">Choisis d'abord un side.</p>
+            ) : (
+              <RoleActionsEditor
+                side={form.side}
+                tags={tags}
+                value={form.role_actions}
+                myRoleIds={myRoleIds}
+                onAction={(roleId, actionId) => setForm((f) => setRoleAction(f, roleId, actionId))}
+                onNote={(roleId, note) => setForm((f) => setRoleNote(f, roleId, note))}
+              />
+            )}
+          </Field>
+        )}
 
-        {/* 5. Zones */}
-        <Field label="5. Zones / callouts" optional>
+        {/* Stuff : type d'utilitaire */}
+        {utilityVisible && (
+          <div ref={refs.utility}>
+            <Field label={`${n('util')}. Type d'utilitaire`} error={errors.utility}>
+              <div className="flex flex-wrap gap-2">
+                {activeOrSelected(tags.utilities, form.utility_ids).map((u) => (
+                  <Chip key={u.id} selected={form.utility_ids.includes(u.id)} onClick={() => toggle('utility_ids', u.id)}>
+                    {u.name}
+                  </Chip>
+                ))}
+              </div>
+            </Field>
+          </div>
+        )}
+
+        {/* Stuff : qui le lance */}
+        {!strategy && (
+          <Field label={`${n('thrower')}. Lancé par`} hint="Le ou les rôles qui lancent ce stuff d'habitude." optional>
+            {!form.side ? (
+              <p className="text-sm text-slate-500">Choisis d'abord un side.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {sideRoles.map((r) => (
+                  <Chip key={r.id} selected={form.role_ids.includes(r.id)} tone={form.side === 'CT' ? 'ct' : 't'} onClick={() => toggle('role_ids', r.id)}>
+                    {r.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
+          </Field>
+        )}
+
+        {/* Zones */}
+        <Field label={`${n('zones')}. ${strategy ? 'Zones / callouts' : 'Position et cible'}`} optional>
           {!form.map_id ? (
             <p className="text-sm text-slate-500">Choisis d'abord une map.</p>
           ) : (
@@ -462,9 +544,9 @@ function CardForm({
           )}
         </Field>
 
-        {/* 6. Catégories */}
+        {/* Catégories (obligatoires pour une stratégie) */}
         <div ref={refs.category}>
-          <Field label="6. Catégories" error={errors.category}>
+          <Field label={`${n('cats')}. Catégories`} error={errors.category} optional={!strategy}>
             <div className="flex flex-wrap gap-2">
               {activeOrSelected(tags.categories, form.category_ids).map((c) => (
                 <Chip key={c.id} selected={form.category_ids.includes(c.id)} onClick={() => toggle('category_ids', c.id)}>
@@ -475,21 +557,8 @@ function CardForm({
           </Field>
         </div>
 
-        {/* 7. Utilitaire (si Stuff) */}
-        {utilityVisible && (
-          <Field label={`${n('util')}. Type d'utilitaire`} optional>
-            <div className="flex flex-wrap gap-2">
-              {activeOrSelected(tags.utilities, form.utility_ids).map((u) => (
-                <Chip key={u.id} selected={form.utility_ids.includes(u.id)} onClick={() => toggle('utility_ids', u.id)}>
-                  {u.name}
-                </Chip>
-              ))}
-            </div>
-          </Field>
-        )}
-
         {/* Type de round (si « Round lancé ») */}
-        {roundVisible && (
+        {strategy && roundVisible && (
           <Field label={`${n('round')}. Type de round`} hint="Rush, déclic, strat… (plusieurs choix possibles)" optional>
             <div className="flex flex-wrap gap-2">
               {activeOrSelected(tags.round_types, form.round_type_ids).map((r) => (
@@ -498,6 +567,21 @@ function CardForm({
                 </Chip>
               ))}
             </div>
+          </Field>
+        )}
+
+        {/* Stratégie : stuffs utilisés */}
+        {strategy && (
+          <Field label={`${n('stuffs')}. Stuffs utilisés`} hint="Les grenades de la stratégie, dans l'ordre, avec qui les lance." optional>
+            <StuffLinksEditor
+              mapId={form.map_id}
+              side={form.side}
+              cards={cards.filter((c) => c.id !== form.id)}
+              links={form.stuff_links}
+              tags={tags}
+              idx={idx}
+              onChange={(stuff_links) => setForm((f) => ({ ...f, stuff_links }))}
+            />
           </Field>
         )}
 
@@ -513,7 +597,7 @@ function CardForm({
           </div>
         </Field>
 
-        {/* 9. Économie */}
+        {/* Économie */}
         <Field label={`${n('eco')}. Économie du round`} optional>
           <div className="flex flex-wrap gap-2">
             {activeOrSelected(tags.economies, form.economy_ids).map((e) => (
@@ -541,7 +625,7 @@ function CardForm({
               value={form.title}
               maxLength={TITLE_MAX}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value, titleTouched: true }))}
-              placeholder="Ex. : Smoke Window depuis T Spawn"
+              placeholder={strategy ? 'Ex. : Exé B avec smoke CT et flash Banana' : 'Ex. : Smoke Window depuis T Spawn'}
               className={cx(inputClass, 'py-2.5 text-base', errors.title && 'ring-red-500')}
             />
           </Field>
@@ -553,7 +637,7 @@ function CardForm({
             id="description"
             value={form.description}
             onChange={(description) => setForm((f) => ({ ...f, description }))}
-            placeholder="Timing, placement, lineup, infos utiles…"
+            placeholder={strategy ? 'Déroulé, timings, calls, variantes…' : 'Placement, visée, type de lancer (jumpthrow…)…'}
           />
         </Field>
 
@@ -604,6 +688,83 @@ function AutosaveIndicator({ form, serverSavedAt, isEdit }: { form: FormState; s
     return <span className="text-xs text-slate-500">{isEdit ? 'Modifications sauvegardées localement' : 'Sauvegarde automatique'}</span>
   }
   return null
+}
+
+/** Liste déroulante des sources, complétée au fur et à mesure (« + Ajouter une source… »). */
+function SourcePicker({ tags, value, onChange }: { tags: Tags; value: number | null; onChange: (id: number | null) => void }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const options = tags.sources.filter((s) => !s.archived || s.id === value)
+
+  async function add() {
+    if (!name.trim()) return
+    setBusy(true)
+    try {
+      const source = await proposeSource(name)
+      qc.setQueryData<Tags>(qk.tags, (old) =>
+        old && !old.sources.some((s) => s.id === source.id) ? { ...old, sources: [...old.sources, source] } : old,
+      )
+      onChange(source.id)
+      setAdding(false)
+      setName('')
+      toast(`Source « ${source.name} » ajoutée`, 'info')
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (adding) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <input
+          autoFocus
+          value={name}
+          maxLength={100}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              add()
+            }
+            if (e.key === 'Escape') setAdding(false)
+          }}
+          placeholder="Nom de la source (chaîne, coach, site…)"
+          className={cx(inputClass, 'min-w-56 flex-1')}
+          aria-label="Nouvelle source"
+        />
+        <Button variant="primary" onClick={add} disabled={!name.trim() || busy}>
+          {busy && <Spinner className="size-4" />} Ajouter
+        </Button>
+        <Button variant="ghost" onClick={() => setAdding(false)}>
+          Annuler
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(e) => {
+        if (e.target.value === '__new') setAdding(true)
+        else onChange(e.target.value ? Number(e.target.value) : null)
+      }}
+      className={cx(inputClass, 'max-w-sm py-2.5')}
+      aria-label="Source"
+    >
+      <option value="">— Aucune —</option>
+      {options.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+      <option value="__new">+ Ajouter une source…</option>
+    </select>
+  )
 }
 
 function ZonePicker({

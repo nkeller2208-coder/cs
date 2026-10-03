@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { EMPTY_TAGS, qk, useTags } from '../hooks/data'
 import { useMember } from '../hooks/auth'
 import { analyzeRows, CSV_COLUMNS, parseCsv, templateCsv } from '../lib/csvImport'
-import { proposeZone, saveCard } from '../lib/api'
+import { proposeSource, proposeZone, saveCard } from '../lib/api'
 import { errorMessage } from '../lib/http'
 import { normalize } from '../lib/text'
 import { Badge, Button, cx, inputClass, Spinner } from '../components/ui'
@@ -60,11 +60,22 @@ export default function ImportPage() {
         }
       }
     }
-    // 2. Crée les cartes une par une (chaque carte est une transaction).
+    // 2. Ajoute les sources manquantes à la liste (une fois chacune).
+    const sources = new Map<string, number>()
+    for (const row of valid) {
+      if (!row.newSource || sources.has(normalize(row.newSource))) continue
+      try {
+        sources.set(normalize(row.newSource), (await proposeSource(row.newSource)).id)
+      } catch (e) {
+        failed.push({ line: row.line, message: `Source « ${row.newSource} » : ${errorMessage(e)}` })
+      }
+    }
+    // 3. Crée les cartes une par une (chaque carte est une transaction).
     for (const row of valid) {
       const extra = row.newZones.map((n) => created.get(`${row.payload!.map_id}:${normalize(n)}`)).filter((x): x is number => !!x)
+      const sourceId = row.newSource ? (sources.get(normalize(row.newSource)) ?? null) : row.payload!.source_id
       try {
-        await saveCard({ ...row.payload!, zone_ids: [...row.payload!.zone_ids, ...extra] })
+        await saveCard({ ...row.payload!, source_id: sourceId, zone_ids: [...row.payload!.zone_ids, ...extra] })
         ok++
       } catch (e) {
         failed.push({ line: row.line, message: errorMessage(e) })
@@ -152,7 +163,7 @@ export default function ImportPage() {
             )}
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={createZones} onChange={(e) => setCreateZones(e.target.checked)} className="accent-amber-500" />
-              Créer les zones inconnues (marquées « à valider »)
+              Créer les zones (marquées « à valider ») et les sources inconnues
             </label>
             <span className="flex-1" />
             <Button variant="primary" disabled={!valid.length || !!progress} onClick={runImport}>

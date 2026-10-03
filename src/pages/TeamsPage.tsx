@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMember } from '../hooks/auth'
 import { useMembers } from '../hooks/data'
@@ -12,7 +11,8 @@ import type { Me, Team, TeamRole } from '../lib/types'
 import { InviteLinkModal, type InviteLink } from '../components/InviteLinkModal'
 import { Badge, Button, EmptyState, Spinner, cx, inputClass } from '../components/ui'
 import { useToast } from '../components/toast'
-import { TEAM_ROLE_LABEL, skillsKey } from './SkillsPage'
+import { TeamLearningBoard } from '../components/Learning'
+import { TEAM_ROLE_LABEL } from '../lib/teamRoles'
 
 const teamsKey = ['teams'] as const
 const ROLES: TeamRole[] = ['captain', 'coach', 'player']
@@ -27,7 +27,6 @@ function useTeamActions() {
   const toast = useToast()
   const refresh = () => {
     qc.invalidateQueries({ queryKey: teamsKey })
-    qc.invalidateQueries({ queryKey: skillsKey })
   }
   return { refresh, onError: (e: unknown) => toast(errorMessage(e), 'error'), toast }
 }
@@ -52,7 +51,7 @@ export default function TeamsPage() {
         <h1 className="text-xl font-bold">Équipes</h1>
         <p className="text-sm text-slate-400">
           Rôles : <strong className="text-amber-200">Capitaine</strong> (joue et gère l'équipe), <strong className="text-violet-200">Coach</strong> (gère,
-          ne joue pas), <strong className="text-slate-200">Joueur</strong>. Capitaines et coachs fixent les compétences de l'équipe et invitent des joueurs.
+          ne joue pas), <strong className="text-slate-200">Joueur</strong>. Capitaines et coachs choisissent les stratégies à apprendre et invitent des joueurs.
         </p>
       </div>
       {me.role === 'admin' && <NewTeam />}
@@ -187,9 +186,6 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
         {myRole && <Badge className={ROLE_TONE[myRole]}>{TEAM_ROLE_LABEL[myRole]}</Badge>}
         <span className="text-xs text-slate-500">{team.members.length} membre{team.members.length > 1 ? 's' : ''}</span>
         <span className="flex-1" />
-        <Link to={`/competences?equipe=${team.id}`} className="text-sm text-amber-400 hover:text-amber-300">
-          Compétences →
-        </Link>
         {manage && !renaming && (
           <Button size="sm" variant="ghost" onClick={() => setRenaming(true)}>
             Renommer
@@ -318,6 +314,8 @@ function TeamCard({ team, me }: { team: Team; me: Me }) {
           </form>
         </div>
       )}
+
+      {(manage || team.members.some((m) => m.member_id === me.id)) && <TeamLearningBoard teamId={team.id} />}
 
       {manage && team.invites.length > 0 && (
         <div className="space-y-1">

@@ -12,8 +12,8 @@ import { RegisterPage } from './pages/RegisterPage'
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ImportPage = lazy(() => import('./pages/ImportPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
-const SkillsPage = lazy(() => import('./pages/SkillsPage'))
 const TeamsPage = lazy(() => import('./pages/TeamsPage'))
+const MePage = lazy(() => import('./pages/MePage'))
 const PrinciplesPage = lazy(() => import('./pages/PrinciplesPage'))
 const PrincipleDetailPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleDetailPage })))
 const PrincipleFormPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleFormPage })))
@@ -39,13 +39,14 @@ function MemberApp({ isAdmin }: { isAdmin: boolean }) {
     <Suspense fallback={<FullPageSpinner />}>
       <Routes location={background ?? location}>
         <Route element={<Layout />}>
-          <Route index element={<BrowsePage />} />
+          <Route index element={<BrowsePage key="strategy" kind="strategy" />} />
+          <Route path="stuff" element={<BrowsePage key="stuff" kind="stuff" />} />
+          <Route path="moi" element={<MePage />} />
           <Route path="c/:id" element={<CardDetailRoute asModal={false} />} />
           <Route path="c/:id/edit" element={<CardFormPage />} />
           <Route path="new" element={<CardFormPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="stats" element={<DashboardPage />} />
-          <Route path="competences" element={<SkillsPage />} />
           <Route path="equipes" element={<TeamsPage />} />
           <Route path="principes" element={<PrinciplesPage />} />
           <Route path="principes/new" element={<PrincipleFormPage />} />

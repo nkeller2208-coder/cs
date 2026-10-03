@@ -4,19 +4,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { EMPTY_TAGS, qk, useCards, useTags } from '../hooks/data'
 import { useMember } from '../hooks/auth'
 import {
-  addAllowlist, createInvite, deleteAllowlist, fetchSkills, revokeInvite, deleteTag, fetchAllowlist, insertTag, mergeZones, removeMember, reorderTags,
+  addAllowlist, createInvite, deleteAllowlist, revokeInvite, deleteTag, fetchAllowlist, insertTag, mergeZones, removeMember, reorderTags,
   updateAllowlist, updateMember, updateTag,
 } from '../lib/api'
 import { errorMessage } from '../lib/http'
 import { formatDay, normalize } from '../lib/text'
-import type { Card, Member, MemberRole, Side, Skill, Tag, TagTable, Tags, Zone } from '../lib/types'
+import type { Card, Member, MemberRole, Side, Tag, TagTable, Tags, Zone } from '../lib/types'
 import { useMembers } from '../hooks/data'
 import { Badge, Button, cx, inputClass, Spinner } from '../components/ui'
 import { useToast } from '../components/toast'
 import { DemoPanel } from '../components/DemoPanel'
 import { InviteLinkModal } from '../components/InviteLinkModal'
-import { SkillEditor, skillsKey } from './SkillsPage'
-import { groupSkills } from '../lib/skills'
 
 const TABS: [string, string][] = [
   ['membres', 'Membres'],
@@ -28,8 +26,9 @@ const TABS: [string, string][] = [
   ['utilitaires', 'Utilitaires'],
   ['economie', 'Économie'],
   ['rounds', 'Rounds'],
+  ['actions', 'Actions des rôles'],
+  ['sources', 'Sources'],
   ['themes', 'Thèmes (principes)'],
-  ['competences', 'Compétences'],
   ['demo', 'Démo'],
 ]
 
@@ -67,13 +66,27 @@ export default function AdminPage() {
           <Route path="maps" element={<TagEditor table="maps" title="Maps" hint="Le map pool actif. Archive une map sortie du pool : ses cartes restent consultables." />} />
           <Route path="zones" element={<ZonesAdmin />} />
           <Route path="roles" element={<RolesAdmin />} />
-          <Route path="categories" element={<TagEditor table="categories" title="Catégories" hint="« Affiche l'utilitaire » fait apparaître Smoke/Flash/… (Stuff) ; « Affiche le type de round » fait apparaître Rush/Déclic/Strat… (Round lancé)." />} />
+          <Route path="categories" element={<TagEditor table="categories" title="Catégories des stratégies" hint="Obligatoires pour une stratégie, facultatives pour un stuff. « Affiche le type de round » fait apparaître Rush/Déclic/Strat… (Round lancé)." />} />
+          <Route
+            path="sources"
+            element={<TagEditor table="sources" title="Sources" hint="D'où viennent les cartes (chaîne, coach, site…). Les membres peuvent en ajouter depuis le formulaire ; ici tu les renommes, les ordonnes, leur ajoutes un lien ou les archives." />}
+          />
+          <Route
+            path="actions"
+            element={
+              <TagEditor
+                table="role_actions"
+                title="Actions des rôles"
+                hint="Ce qu'un rôle fait dans une stratégie (Support, Lurk, Fight…). La couleur sert aux badges ; décoche « Le rôle participe » pour une action du type « Non concerné »."
+                defaults={{ involved: true, color: '#64748b' }}
+              />
+            }
+          />
           <Route path="risques" element={<TagEditor table="risks" title="Niveaux de risque" hint="Ordre du moins au plus risqué. La couleur sert aux badges." />} />
           <Route path="utilitaires" element={<TagEditor table="utilities" title="Types d'utilitaire" />} />
           <Route path="economie" element={<TagEditor table="economies" title="Économie du round" />} />
           <Route path="rounds" element={<TagEditor table="round_types" title="Types de round" hint="Proposés quand la catégorie « Round lancé » est cochée (rush, déclic, strat…)." />} />
           <Route path="themes" element={<TagEditor table="principle_themes" title="Thèmes des principes de jeu" hint="Regroupent les principes dans la page « Principes »." />} />
-          <Route path="competences" element={<SkillsAdmin />} />
           <Route path="demo" element={<Section title="Données de démo"><DemoPanel /></Section>} />
         </Routes>
       )}
@@ -83,7 +96,22 @@ export default function AdminPage() {
 
 // ---------------------------------------------------------------- utilitaires
 
-type AnyTag = Tag & Partial<{ side: Side; color: string; shows_utility: boolean; shows_round_type: boolean; map_id: number; pending: boolean }>
+/** Lien d'une source, enregistré à la sortie du champ. */
+function SourceUrl({ tag, onSave }: { tag: { url?: string }; onSave: (url: string) => void }) {
+  const [url, setUrl] = useState(tag.url ?? '')
+  return (
+    <input
+      value={url}
+      onChange={(e) => setUrl(e.target.value)}
+      onBlur={() => url.trim() !== (tag.url ?? '') && onSave(url.trim())}
+      placeholder="https://… (facultatif)"
+      className={cx(inputClass, 'w-56! py-1 text-xs')}
+      aria-label="Lien de la source"
+    />
+  )
+}
+
+type AnyTag = Tag & Partial<{ side: Side; color: string; shows_utility: boolean; shows_round_type: boolean; map_id: number; pending: boolean; involved: boolean; url: string }>
 
 function usageCounts(cards: Card[] | undefined, table: TagTable): Map<number, number> {
   const m = new Map<number, number>()
@@ -98,6 +126,8 @@ function usageCounts(cards: Card[] | undefined, table: TagTable): Map<number, nu
       case 'utilities': c.utility_ids.forEach(add); break
       case 'economies': c.economy_ids.forEach(add); break
       case 'round_types': c.round_type_ids.forEach(add); break
+      case 'role_actions': (c.role_actions ?? []).forEach((a) => add(a.action_id)); break
+      case 'sources': add(c.source_id ?? null); break
     }
   }
   return m
@@ -267,7 +297,7 @@ function TagRow({
       <span className="text-xs text-slate-500">{usage} carte{usage > 1 ? 's' : ''}</span>
       <span className="flex-1" />
       {extra}
-      {table === 'risks' && (
+      {(table === 'risks' || table === 'role_actions') && (
         <input
           type="color"
           value={tag.color ?? '#64748b'}
@@ -276,15 +306,16 @@ function TagRow({
           aria-label="Couleur"
         />
       )}
-      {table === 'categories' && (
-        <label className="flex items-center gap-1.5 text-xs text-slate-400">
+      {table === 'sources' && <SourceUrl tag={tag} onSave={(url) => m.update.mutate({ id: tag.id, values: { url } })} />}
+      {table === 'role_actions' && (
+        <label className="flex items-center gap-1.5 text-xs text-slate-400" title="Décoché : le rôle ne participe pas (ex. « Non concerné »)">
           <input
             type="checkbox"
-            checked={!!tag.shows_utility}
-            onChange={(e) => m.update.mutate({ id: tag.id, values: { shows_utility: e.target.checked } })}
+            checked={!!tag.involved}
+            onChange={(e) => m.update.mutate({ id: tag.id, values: { involved: e.target.checked } })}
             className="accent-amber-500"
           />
-          Affiche l'utilitaire
+          Le rôle participe
         </label>
       )}
       {table === 'categories' && (
@@ -606,86 +637,3 @@ function MembersAdmin() {
   )
 }
 
-// ---------------------------------------------------------------- compétences
-
-function SkillsAdmin() {
-  const qc = useQueryClient()
-  const toast = useToast()
-  const q = useQuery({ queryKey: [...skillsKey, 'catalogue'], queryFn: () => fetchSkills() })
-  const [editing, setEditing] = useState<Skill | null>(null)
-  const [creating, setCreating] = useState(false)
-  const done = () => qc.invalidateQueries({ queryKey: skillsKey })
-  const onError = (e: unknown) => toast(errorMessage(e), 'error')
-  const update = useMutation({ mutationFn: ({ id, values }: { id: number; values: Record<string, unknown> }) => updateTag('skills', id, values), onSuccess: done, onError })
-  const remove = useMutation({ mutationFn: (id: number) => deleteTag('skills', id), onSuccess: done, onError })
-  const reorder = useMutation({ mutationFn: (ids: number[]) => reorderTags('skills', ids), onSuccess: done, onError })
-  if (!q.data) return <Spinner />
-  const data = q.data
-  const groups = groupSkills(data, data.skills)
-
-  return (
-    <div className="space-y-10">
-      <Section
-        title="Compétences"
-        hint="Le statut de chaque joueur et de l'équipe se règle dans la page Compétences. Archiver masque une compétence sans perdre les statuts."
-        actions={
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            + Compétence
-          </Button>
-        }
-      >
-        {groups.map((g) => (
-          <div key={g.id ?? 'none'} className="space-y-1">
-            <h3 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">{g.name}</h3>
-            <ul className="divide-y divide-slate-800 rounded-xl ring-1 ring-slate-800">
-              {g.skills.map((sk, i) => (
-                <li key={sk.id} className={cx('flex flex-wrap items-center gap-2 px-3 py-2', sk.archived && 'opacity-60')}>
-                  <span className="flex flex-col">
-                    {(['▲', '▼'] as const).map((arrow, d) => (
-                      <button
-                        key={arrow}
-                        type="button"
-                        disabled={d === 0 ? i === 0 : i === g.skills.length - 1}
-                        onClick={() => {
-                          const list = g.skills.map((x) => x.id)
-                          const j = d === 0 ? i - 1 : i + 1
-                          ;[list[i], list[j]] = [list[j], list[i]]
-                          reorder.mutate(list)
-                        }}
-                        className="px-1 text-xs text-slate-500 hover:text-white disabled:opacity-20"
-                        aria-label={d === 0 ? 'Monter' : 'Descendre'}
-                      >
-                        {arrow}
-                      </button>
-                    ))}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{sk.name}</p>
-                    {sk.description && <p className="truncate text-xs text-slate-500">{sk.description}</p>}
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(sk)}>
-                    Modifier
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: sk.id, values: { archived: !sk.archived } })}>
-                    {sk.archived ? 'Désarchiver' : 'Archiver'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-red-400 hover:text-red-300"
-                    onClick={() => window.confirm(`Supprimer « ${sk.name} » et tous ses statuts ?`) && remove.mutate(sk.id)}
-                  >
-                    Supprimer
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </Section>
-      <TagEditor table="skill_groups" title="Groupes de compétences" hint="Regroupent les compétences dans les tableaux." />
-      {creating && <SkillEditor open onClose={() => setCreating(false)} data={data} />}
-      {editing && <SkillEditor key={editing.id} open onClose={() => setEditing(null)} data={data} skill={editing} />}
-    </div>
-  )
-}

@@ -67,10 +67,13 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
   }, [mapZones, zoneQuery, allZones, counts.zone, filters.zone])
   const hiddenZones = mapZones.filter((z) => !z.archived).length - zones.length
 
-  const stuffSelected = tags.categories.some((c) => c.shows_utility && filters.cat.includes(c.id))
-  const showUtility = filters.cat.length === 0 || stuffSelected || filters.util.length > 0
+  const strategy = filters.kind === 'strategy'
   const roundSelected = tags.categories.some((c) => c.shows_round_type && filters.cat.includes(c.id))
-  const showRound = filters.cat.length === 0 || roundSelected || filters.round.length > 0
+  const showRound = strategy && (filters.cat.length === 0 || roundSelected || filters.round.length > 0)
+  // Sur les stuffs, les catégories sont facultatives : on n'affiche que celles utilisées.
+  const cats = strategy
+    ? tags.categories.filter((c) => !c.shows_utility)
+    : tags.categories.filter((c) => (counts.cat.get(c.id) ?? 0) > 0 || filters.cat.includes(c.id))
 
   const viewLabels: [ViewKey, string][] = [
     ['all', 'Toutes'],
@@ -89,6 +92,8 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
         ))}
       </Section>
 
+      {!strategy && <Section title="Utilitaire">{chips(tags.utilities, 'util')}</Section>}
+
       <Section title="Map">{chips(tags.maps, 'map')}</Section>
 
       <Section title="Side">
@@ -100,7 +105,7 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
       </Section>
 
       {(filters.side.length === 1 ? filters.side : (['CT', 'T'] as Side[])).map((side) => (
-        <Section key={side} title={`Rôles ${side}`}>
+        <Section key={side} title={`${strategy ? 'Rôles' : 'Lancé par'} ${side}`}>
           {chips(
             roles.filter((r) => r.side === side),
             'role',
@@ -108,6 +113,21 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
           )}
         </Section>
       ))}
+
+      {strategy && (
+        <Section title="Actions des rôles">
+          {visible(tags.role_actions, 'act').map((a) => {
+            const selected = filters.act.includes(a.id)
+            const count = counts.act.get(a.id) ?? 0
+            return (
+              <Chip key={a.id} selected={selected} count={count} onClick={() => toggle('act', a.id)} className={cx(!selected && count === 0 && 'opacity-40')}>
+                <span className="size-2 rounded-full" style={{ backgroundColor: a.color }} />
+                {a.name}
+              </Chip>
+            )
+          })}
+        </Section>
+      )}
 
       <Section title="Zones / callouts">
         {filters.map.length === 0 ? (
@@ -132,8 +152,7 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
         )}
       </Section>
 
-      <Section title="Catégorie">{chips(tags.categories, 'cat')}</Section>
-      {showUtility && <Section title="Utilitaire">{chips(tags.utilities, 'util')}</Section>}
+      {cats.length > 0 && <Section title="Catégorie">{chips(cats, 'cat')}</Section>}
       {showRound && <Section title="Round lancé">{chips(tags.round_types, 'round')}</Section>}
       <Section title="Risque">
         {visible(tags.risks, 'risk').map((r) => {
@@ -148,6 +167,7 @@ export function FilterPanel({ filters, tags, counts, views, onChange }: Props) {
         })}
       </Section>
       <Section title="Économie">{chips(tags.economies, 'eco')}</Section>
+      {tags.sources.length > 0 && <Section title="Source">{chips(tags.sources, 'src')}</Section>}
     </div>
   )
 }

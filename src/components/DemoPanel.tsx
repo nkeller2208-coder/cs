@@ -24,8 +24,10 @@ export function DemoPanel({ compact = false }: { compact?: boolean }) {
     let ok = 0
     try {
       const ids = new Map<string, number>()
-      for (const { payload, review } of buildDemoCards(tags)) {
-        const id = await saveCard(payload)
+      for (const { payload, review, stuffs } of buildDemoCards(tags)) {
+        // Les stuffs sont créés avant les stratégies qui les utilisent.
+        const stuff_links = (stuffs ?? []).flatMap((s) => (ids.has(s.title) ? [{ stuff_id: ids.get(s.title)!, role_id: s.role_id }] : []))
+        const id = await saveCard({ ...payload, stuff_links })
         ids.set(payload.title, id)
         if (review) await flagCard(id, review)
         ok++
@@ -65,9 +67,10 @@ export function DemoPanel({ compact = false }: { compact?: boolean }) {
     <div className="space-y-3">
       {!compact && (
         <p className="text-sm text-slate-400">
-          Treize cartes et quatre principes titrés « {DEMO_PREFIX.trim()} » pour vérifier chaque cas : vidéo YouTube avec
-          début, Short vertical, image directe, image cassée, lien externe, plusieurs médias, texte seul, brouillon, carte
-          « À revoir », rounds lancés (rush, déclic), post-plant, et principes généraux ou rattachés par étiquettes.
+          Treize cartes (dix stratégies, trois stuffs) et quatre principes titrés « {DEMO_PREFIX.trim()} » pour vérifier
+          chaque cas : vidéo YouTube avec début, Short vertical, image directe, image cassée, lien externe, plusieurs médias,
+          texte seul, brouillon, carte « À revoir », rounds lancés, actions des rôles, stuff rattaché à une stratégie, et
+          principes généraux ou rattachés par étiquettes.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">

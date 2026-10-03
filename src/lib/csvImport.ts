@@ -2,10 +2,10 @@ import Papa from 'papaparse'
 import type { CardPayload } from './api'
 import { parseMedia } from './media'
 import { normalize } from './text'
-import type { CardStatus, Side, Tag, Tags } from './types'
+import type { CardKind, CardStatus, Side, Tag, Tags } from './types'
 
 export const CSV_COLUMNS = [
-  'titre', 'description', 'liens', 'map', 'side', 'roles', 'categories', 'zones', 'risque', 'utilitaires', 'rounds', 'economie', 'statut',
+  'type', 'titre', 'description', 'liens', 'map', 'side', 'roles', 'categories', 'zones', 'risque', 'utilitaires', 'rounds', 'economie', 'source', 'statut',
 ] as const
 type Column = (typeof CSV_COLUMNS)[number]
 
@@ -15,11 +15,14 @@ export interface ImportRow {
   payload: CardPayload | null
   /** Zones inconnues à créer (marquées « à valider ») avant l'import. */
   newZones: string[]
+  /** Source inconnue à ajouter à la liste avant l'import. */
+  newSource: string | null
   errors: string[]
   warnings: string[]
 }
 
 const HEADER_ALIASES: Record<string, Column> = {
+  type: 'type', genre: 'type', rubrique: 'type',
   titre: 'titre', title: 'titre',
   description: 'description',
   liens: 'liens', lien: 'liens', medias: 'liens', media: 'liens', links: 'liens', url: 'liens', urls: 'liens',
@@ -33,6 +36,7 @@ const HEADER_ALIASES: Record<string, Column> = {
   economie: 'economie', eco: 'economie',
   rounds: 'rounds', round: 'rounds', typederound: 'rounds', roundlance: 'rounds', typesderound: 'rounds',
   statut: 'statut', status: 'statut',
+  source: 'source', origine: 'source', auteur: 'source', credit: 'source',
 }
 
 const split = (s: string | undefined) =>
@@ -41,6 +45,11 @@ const split = (s: string | undefined) =>
 function find<T extends Tag>(list: T[], name: string): T | undefined {
   const n = normalize(name)
   return list.find((t) => normalize(t.name) === n && !t.archived) ?? list.find((t) => normalize(t.name) === n)
+}
+
+const KINDS: Record<string, CardKind> = {
+  strategie: 'strategy', strategies: 'strategy', strat: 'strategy', strategy: 'strategy',
+  stuff: 'stuff', grenade: 'stuff', utilitaire: 'stuff', lineup: 'stuff',
 }
 
 const STATUS: Record<string, CardStatus> = {
@@ -85,11 +94,27 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
     }
 
     const roles = resolve(split(r.roles), tags.roles.filter((x) => !side || x.side === side), side ? `Rôle ${side}` : 'Rôle')
-    const cats = resolve(split(r.categories), tags.categories, 'Catégorie')
-    if (!split(r.categories).length) errors.push('Au moins une catégorie est obligatoire')
+    const allCats = resolve(split(r.categories), tags.categories, 'Catégorie')
     const utils = resolve(split(r.utilitaires), tags.utilities, 'Utilitaire')
+    // Type : colonne « type », sinon déduit (ancienne catégorie « Stuff », ou utilitaire sans catégorie).
+    const typeRaw = normalize(r.type ?? '')
+    const legacyStuff = tags.categories.some((c) => c.shows_utility && allCats.includes(c.id))
+    const kind: CardKind = KINDS[typeRaw] ?? (legacyStuff || (utils.length > 0 && !allCats.length) ? 'stuff' : 'strategy')
+    if (typeRaw && !KINDS[typeRaw]) errors.push(`Type inconnu : ${r.type} (stratégie ou stuff)`)
+    const cats = allCats.filter((id) => !tags.categories.find((c) => c.id === id)?.shows_utility)
+    if (kind === 'strategy' && !cats.length) errors.push('Au moins une catégorie est obligatoire pour une stratégie')
+    if (kind === 'stuff' && !utils.length) errors.push("Indique le type d'utilitaire d'un stuff (smoke, flash…)")
     const ecos = resolve(split(r.economie), tags.economies, 'Économie')
     const rounds = resolve(split(r.rounds), tags.round_types, 'Type de round')
+    const sourceName = (r.source ?? '').trim()
+    const source = sourceName ? find(tags.sources, sourceName) : undefined
+    let newSource: string | null = null
+    if (sourceName && !source) {
+      if (createZones) {
+        newSource = sourceName
+        warnings.push(`Nouvelle source ajoutée à la liste : ${sourceName}`)
+      } else errors.push(`Source inconnue : ${sourceName}`)
+    }
     const riskName = (r.risque ?? '').trim()
     const risk = riskName ? find(tags.risks, riskName) : undefined
     if (riskName && !risk) errors.push(`Risque inconnu : ${riskName}`)
@@ -113,8 +138,8 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
     if (!title) errors.push('Titre manquant')
     else if (title.length > 100) errors.push('Titre trop long (100 caractères max)')
     if (!media.length && !description) errors.push('Il faut au moins un lien ou une description')
-    if (utils.length && !tags.categories.some((c) => c.shows_utility && cats.includes(c.id))) {
-      warnings.push('Utilitaires ignorés (catégorie Stuff non cochée)')
+    if (utils.length && kind === 'strategy') {
+      warnings.push('Utilitaires ignorés (réservés aux cartes stuff)')
     }
     if (rounds.length && !tags.categories.some((c) => c.shows_round_type && cats.includes(c.id))) {
       warnings.push('Types de round ignorés (catégorie « Round lancé » non cochée)')
@@ -128,22 +153,25 @@ export function analyzeRows(rows: Record<Column, string>[], tags: Tags, createZo
       line: i + 2, // +1 pour l'en-tête, +1 pour la numérotation humaine
       title,
       newZones,
+      newSource,
       errors,
       warnings,
       payload: errors.length
         ? null
         : {
+            kind,
             title,
             description,
             map_id: map!.id,
             side,
             risk_id: risk?.id ?? null,
+            source_id: source?.id ?? null,
             status: status!,
             media: media.map(([, m]) => ({ url: m!.url, kind: m!.kind, url_key: m!.url_key })),
             role_ids: roles,
             category_ids: cats,
             zone_ids: zoneIds,
-            utility_ids: utils,
+            utility_ids: kind === 'stuff' ? utils : [],
             economy_ids: ecos,
             round_type_ids: rounds,
             remember: false,
@@ -159,17 +187,17 @@ export function templateCsv(tags: Tags): string {
   const zones = tags.zones.filter((z) => z.map_id === mapId && !z.archived).slice(0, 2).map((z) => z.name)
   const ct = tags.roles.filter((r) => r.side === 'CT' && !r.archived).map((r) => r.name)
   const t = tags.roles.filter((r) => r.side === 'T' && !r.archived).map((r) => r.name)
-  const stuff = tags.categories.find((c) => c.shows_utility && !c.archived)?.name ?? ''
+  const strategyCat = tags.categories.find((c) => !c.shows_utility && !c.archived)?.name ?? ''
   const rows = [
     CSV_COLUMNS as unknown as string[],
     [
-      'Smoke window depuis T spawn', 'Viser le coin du toit puis **jumpthrow**.', 'https://www.youtube.com/watch?v=XXXXXXXXXXX&t=42s',
-      mapName, 'T', t.slice(0, 1).join(';'), stuff, zones.join(';'), first(tags.risks), first(tags.utilities), '', first(tags.economies), 'publié',
+      'stuff', 'Smoke window depuis T spawn', 'Viser le coin du toit puis **jumpthrow**.', 'https://www.youtube.com/watch?v=XXXXXXXXXXX&t=42s',
+      mapName, 'T', t.slice(0, 1).join(';'), '', zones.join(';'), first(tags.risks), first(tags.utilities), '', first(tags.economies), first(tags.sources), 'publié',
     ],
     [
-      'Position fixe A', 'Tenir le site depuis le coin.\\n- jouer passif\\n- reculer si flash', 'https://i.imgur.com/XXXXXXX.png',
-      mapName, 'CT', ct.slice(0, 2).join(';'), tags.categories.find((c) => !c.shows_utility && !c.archived)?.name ?? '', zones.slice(0, 1).join(';'),
-      first(tags.risks), '', '', '', 'brouillon',
+      'stratégie', 'Position fixe A', 'Tenir le site depuis le coin.\\n- jouer passif\\n- reculer si flash', 'https://i.imgur.com/XXXXXXX.png',
+      mapName, 'CT', ct.slice(0, 2).join(';'), strategyCat, zones.slice(0, 1).join(';'),
+      first(tags.risks), '', '', '', '', 'brouillon',
     ],
   ]
   return '﻿' + Papa.unparse(rows, { quotes: true })

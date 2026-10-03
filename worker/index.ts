@@ -6,9 +6,9 @@ import { ensureMigrated } from './migrate'
 import { cards, media } from './cards'
 import type { AppEnv } from './env'
 import { principles } from './principles'
-import { skills } from './skills'
 import { tags } from './tags'
 import { teams } from './teams'
+import { learning } from './learning'
 
 const app = new Hono<AppEnv>().basePath('/api')
 
@@ -66,8 +66,8 @@ app.route('/tags', tags)
 app.route('/members', members)
 app.route('/allowlist', allowlist)
 app.route('/principles', principles)
-app.route('/skills', skills)
 app.route('/teams', teams)
+app.route('/learning', learning)
 
 app.notFound((c) => c.json({ error: 'Introuvable' }, 404))
 app.onError((err, c) => {

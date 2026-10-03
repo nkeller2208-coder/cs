@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { canEditCard, qk, useCards, useMemberIndex, usePrinciples, useTagIndex, useTags, type TagIndex } from '../hooks/data'
+import {
+  canEditCard, qk, useCards, useMemberIndex, useMembers, useMyRoleIds, usePrinciples, useTagIndex, useTags, type TagIndex,
+} from '../hooks/data'
 import { useMember } from '../hooks/auth'
 import { deleteCard, fetchHistory, flagCard, linkPrincipleCard, resolveCardReview, unlinkPrincipleCard } from '../lib/api'
 import { principlesForCard } from '../lib/principles'
@@ -10,7 +12,9 @@ import { errorMessage } from '../lib/http'
 import { formatDate } from '../lib/text'
 import { diffSnapshots } from '../lib/history'
 import type { Card, Member } from '../lib/types'
-import { CardBadges, StatusBadge } from '../components/CardBadges'
+import { CardBadges, KindBadge, StatusBadge } from '../components/CardBadges'
+import { ActionBadge, myAction, NewStrategyFromStuff, RoleActionsView, StuffLinksView, UsedInStrategies } from '../components/StrategyPieces'
+import { CardLearningPanel, LearningBadge } from '../components/Learning'
 import { MediaView } from '../components/MediaView'
 import { Markdown } from '../components/Markdown'
 import { Button, Modal, Spinner, cx, inputClass } from '../components/ui'
@@ -119,6 +123,10 @@ function CardDetailBody({
   })
   const editable = canEditCard(card, me)
   const canResolve = editable || card.review_by === me.id
+  const allCards = useCards().data ?? []
+  const allMembers = useMembers().data ?? []
+  const myRoleIds = useMyRoleIds()
+  const mine = card.kind === 'strategy' ? myAction(card, myRoleIds, idx) : null
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: qk.cards })
@@ -168,7 +176,9 @@ function CardDetailBody({
       <header className="flex items-start gap-3 border-b border-slate-800 px-5 py-4">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2">
+            <KindBadge kind={card.kind} />
             <StatusBadge status={card.status} />
+            <LearningBadge card={card} />
             <span className="text-xs text-slate-500">#{card.id}</span>
           </div>
           <h1 className="text-xl font-bold text-slate-50 sm:text-2xl">{card.title || 'Sans titre'}</h1>
@@ -212,6 +222,20 @@ function CardDetailBody({
       )}
 
       <div className="space-y-5 px-5 py-5">
+        {mine && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-500/10 px-4 py-3 ring-1 ring-amber-400/40">
+            <span className="text-sm font-semibold text-amber-200">Ton rôle : {mine.role.name}</span>
+            <ActionBadge action={mine.action} className="text-sm" />
+            {mine.note && <span className="text-sm text-slate-200">— {mine.note}</span>}
+          </div>
+        )}
+        {card.kind === 'strategy' && (
+          <>
+            <RoleActionsView card={card} idx={idx} myRoleIds={myRoleIds} members={allMembers} />
+            <StuffLinksView card={card} cards={allCards} idx={idx} myRoleIds={myRoleIds} />
+          </>
+        )}
+        <CardLearningPanel card={card} />
         {card.media.length > 0 && (
           <div className="space-y-4">
             {card.media.map((m, i) => (
@@ -220,6 +244,13 @@ function CardDetailBody({
           </div>
         )}
         {card.description.trim() && <Markdown source={card.description} className="text-base" />}
+
+        {card.kind === 'stuff' && (
+          <>
+            <UsedInStrategies card={card} cards={allCards} idx={idx} />
+            {card.status !== 'draft' && <NewStrategyFromStuff card={card} />}
+          </>
+        )}
 
         <CardPrinciples card={card} me={me} />
 

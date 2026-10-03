@@ -112,14 +112,43 @@ droits vérifiés par l'API à chaque requête, en-têtes CSP/anti-iframe/noinde
 | Zones proposées par les membres, validation / fusion par l'admin | `worker/tags.ts`, `src/pages/AdminPage.tsx` |
 | Saisie en série, Dupliquer, dernières valeurs mémorisées | `src/lib/cardForm.ts` |
 | Sauvegarde auto, statuts Brouillon / Publié / À revoir, historique des modifications | `worker/cards.ts`, `src/lib/history.ts` |
+| **Apprentissage** : stratégies « à apprendre » fixées par le capitaine, note sur 5 de chaque joueur, tableau d'équipe | `worker/learning.ts`, `src/components/Learning.tsx` |
+| **Stratégies et Stuff** : deux rubriques ; un stuff (smoke, flash…) peut être rattaché à une stratégie, avec le rôle qui le lance | `/` et `/stuff`, `worker/cards.ts`, `src/components/StrategyPieces.tsx` |
+| **Rôle de chacun** dans une stratégie : une action par rôle (Entry, Support, Lurk, Fight… ou Non concerné) + une précision | formulaire « Que fait chaque rôle ? », Admin → Actions des rôles |
+| **Mon espace** : pseudo, rôles en jeu (mise en avant de « Ton rôle » sur les stratégies, filtre « Mes rôles »), objectifs, mes cartes, mot de passe | `src/pages/MePage.tsx` |
 | Rounds lancés (Rush, Déclic, Strat…), Post-plant | catégories + liste « Types de round » |
 | **Principes de jeu** rattachés à des étiquettes et/ou à des cartes | `src/pages/PrinciplesPage.tsx`, `worker/principles.ts` |
-| **Compétences** par joueur et par équipe (voir ci-dessous) | `src/pages/SkillsPage.tsx`, `worker/skills.ts` |
 | Tableau de bord analytique | `src/pages/DashboardPage.tsx`, `src/lib/stats.ts` |
 | Import CSV avec prévisualisation | `src/pages/ImportPage.tsx`, `src/lib/csvImport.ts` |
 | Données de démo (13 cartes, 4 principes) en un clic | Admin → Démo, `src/lib/demo.ts` |
 
 Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
+
+### Apprentissage du Playbook
+
+- Le menu **Playbook** regroupe deux sous-onglets : **Stratégies** et **Stuff**.
+- Sur une stratégie, le **capitaine** (ou un coach, ou l'admin) choisit pour son équipe : *Non travaillée*,
+  **À apprendre** ou **Maîtrisée**. Les joueurs la retrouvent avec le filtre rapide **📌 À apprendre** et dans Mon espace.
+- Chaque joueur **note sur 5 son niveau** sur chaque stratégie et chaque stuff (1 Je découvre → 5 Je maîtrise),
+  directement depuis la vignette ou la fiche. Filtre **☆ Pas encore notées**.
+- **Équipes → Playbook de l'équipe** : stratégies suivies × note de chaque joueur, avec la moyenne (les coachs, qui ne
+  jouent pas, ne sont pas notés).
+
+### Stratégies, stuff et rôles
+
+- **Stratégie** : ce que fait l'équipe. Pour chaque rôle du side, on choisit une **action** (Entry, Fight, Trade,
+  Support, Lurk, Ancre, Rotation, Info, ou *Non concerné*) et une précision libre (« lance la smoke Window »).
+  Les rôles concernés (filtres, tableau de bord) sont déduits des actions. La liste des actions se modifie dans
+  **Admin → Actions des rôles** (couleur, « le rôle participe »).
+- **Stuff** : une grenade précise (type d'utilitaire obligatoire, « lancé par », position et cible).
+- Une stratégie **rattache des stuffs** de la même map, dans l'ordre, avec le rôle qui les lance ; la fiche d'un stuff
+  liste les stratégies qui l'utilisent (« Nouvelle stratégie avec ce stuff »).
+- **Mon espace** (menu du compte, ou onglet « Moi » sur mobile) : chacun indique ses **rôles en jeu** ; les stratégies
+  affichent alors « Ton rôle : Pivot B → Support », et le filtre rapide **★ Mes rôles** ne garde que ce qui le concerne.
+- **Source** de chaque carte (Devil, Le Repère, Refrag…) : liste déroulante complétée au fur et à mesure (« + Ajouter
+  une source… » dans le formulaire), filtre « Source », gestion et lien facultatif dans **Admin → Sources**.
+- Import CSV : colonne `source` (une source inconnue est ajoutée à la liste) et colonne `type` (`stratégie` ou `stuff`) ; sans elle, une ligne avec un utilitaire et sans catégorie
+  (ou l'ancienne catégorie « Stuff ») devient un stuff.
 
 ### Équipes et rôles
 
@@ -137,22 +166,6 @@ Menu **Équipes**. Le site peut accueillir plusieurs équipes ; un joueur peut a
   joueur y choisit son email et son mot de passe, puis rejoint l'équipe. Il peut aussi **ajouter un membre du site**
   déjà existant (par exemple un joueur d'une autre équipe).
 - Un capitaine ne peut pas se rétrograder s'il est le dernier à gérer l'équipe.
-
-### Compétences
-
-Menu **Compétences** (avec un sélecteur d'équipe si tu en as plusieurs). Chaque compétence a trois statuts : **○ Non travaillé**, **◐ À travailler**, **● Acquis**.
-
-- **À travailler** : la vue d'ensemble de tout ce qu'on travaille. Les objectifs d'équipe, avec la progression
-  de chaque joueur, puis les objectifs individuels de chacun.
-- **Équipe & joueurs** : tableau compétences × (équipe + chaque joueur). Passer une compétence « à travailler »
-  dans la colonne **Équipe** la passe **« à travailler » chez tous les joueurs** (après confirmation). Les joueurs
-  la passent ensuite « acquis » à leur rythme. Mettre l'équipe sur « acquis » ou « non travaillé » ne modifie pas
-  les joueurs.
-- **Fiche joueur** : les compétences d'un joueur en trois colonnes, avec sa progression.
-
-Droits : capitaines et coachs (et l'admin) fixent le statut d'équipe et peuvent modifier les joueurs de leur
-équipe ; chaque joueur modifie ses propres statuts. La liste des compétences est commune à toutes les équipes et
-se gère dans **Admin → Compétences** (ou « + Compétence »). Les statuts d'un joueur le suivent d'une équipe à l'autre.
 
 ---
 

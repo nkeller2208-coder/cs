@@ -58,3 +58,11 @@ describe('timestamps', () => {
     )
   })
 })
+
+describe('images Cloudflare', () => {
+  it('reconnaît une image servie par Cloudflare Images (…/fichier.jpg/public)', () => {
+    expect(parseMedia('https://refrag.gg/cdn-cgi/imagedelivery/abc/wordpress/2025/11/x.jpg/public')?.kind).toBe('image')
+    expect(parseMedia('https://imagedelivery.net/abc/id/public')?.kind).toBe('image')
+    expect(parseMedia('https://refrag.gg/blog/article')?.kind).toBe('link')
+  })
+})

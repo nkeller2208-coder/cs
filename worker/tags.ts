@@ -12,11 +12,12 @@ export const TAG_TABLES: Record<string, string[]> = {
   utilities: ['name', 'sort_order', 'archived'],
   economies: ['name', 'sort_order', 'archived'],
   round_types: ['name', 'sort_order', 'archived'],
+  role_actions: ['name', 'sort_order', 'archived', 'involved', 'color'],
+  sources: ['name', 'sort_order', 'archived', 'url'],
   principle_themes: ['name', 'sort_order', 'archived'],
   skill_groups: ['name', 'sort_order', 'archived'],
-  skills: ['name', 'sort_order', 'archived', 'description', 'group_id'],
 }
-const BOOLS = new Set(['archived', 'pending', 'shows_utility', 'shows_round_type'])
+const BOOLS = new Set(['archived', 'pending', 'shows_utility', 'shows_round_type', 'involved'])
 
 function table(name: string) {
   if (!TAG_TABLES[name]) fail(404, 'Liste inconnue')
@@ -38,6 +39,10 @@ function clean(t: string, body: Record<string, unknown>) {
     if (k === 'side' && v !== 'CT' && v !== 'T') fail(400, 'Side invalide')
     if (k === 'color' && !/^#[0-9a-f]{6}$/i.test(String(v))) fail(400, 'Couleur invalide')
     if (k === 'description') v = String(v ?? '').slice(0, 2000)
+    if (k === 'url') {
+      v = String(v ?? '').trim()
+      if (v && (!/^https?:\/\//i.test(v as string) || (v as string).length > 500)) fail(400, 'Lien invalide (http(s) uniquement)')
+    }
     out[k] = v
   }
   return out
@@ -55,7 +60,7 @@ export function sqlError(e: unknown): never {
 export const tags = new Hono<AppEnv>()
 
 tags.get('/', async (c) => {
-  const names = Object.keys(TAG_TABLES).filter((t) => t !== 'skills')
+  const names = Object.keys(TAG_TABLES)
   const res = await c.env.DB.batch(names.map((t) => c.env.DB.prepare(`SELECT * FROM ${t}`)))
   return c.json(Object.fromEntries(names.map((t, i) => [t, (res[i].results as Record<string, unknown>[]).map(fixBools)])))
 })
@@ -69,6 +74,19 @@ tags.post('/zones/propose', async (c) => {
   if (!(await first(c.env.DB, 'SELECT id FROM maps WHERE id = ?', Number(map_id)))) fail(400, 'Map inconnue')
   const row = await c.env.DB.prepare('INSERT INTO zones (map_id, name, pending, created_by, sort_order) VALUES (?, ?, 1, ?, 999) RETURNING *')
     .bind(Number(map_id), n, me.id).first().catch(sqlError)
+  return c.json(fixBools(row as Record<string, unknown>))
+})
+
+/** Un membre ajoute une source depuis le formulaire (si elle existe déjà, elle est simplement renvoyée). */
+tags.post('/sources/propose', async (c) => {
+  const me = c.get('me')
+  const { name } = await c.req.json<{ name?: string }>()
+  const n = String(name ?? '').trim()
+  if (!n || n.length > 100) fail(400, 'Nom de source invalide')
+  const existing = await first<Record<string, unknown>>(c.env.DB, 'SELECT * FROM sources WHERE name = ? COLLATE NOCASE', n)
+  if (existing) return c.json(fixBools(existing))
+  const row = await c.env.DB.prepare('INSERT INTO sources (name, created_by, sort_order) VALUES (?, ?, 999) RETURNING *')
+    .bind(n, me.id).first().catch(sqlError)
   return c.json(fixBools(row as Record<string, unknown>))
 })
 
@@ -90,7 +108,6 @@ tags.post('/:table', requireAdmin, async (c) => {
   const t = table(c.req.param('table'))
   const v = clean(t, await c.req.json())
   if (!('name' in v)) fail(400, 'Le nom est obligatoire')
-  if (t === 'skills') v.created_by = c.get('me').id
   const cols = Object.keys(v)
   const row = await c.env.DB.prepare(`INSERT INTO ${t} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')}) RETURNING *`)
     .bind(...Object.values(v)).first().catch(sqlError)
@@ -120,6 +137,13 @@ tags.post('/:table/reorder', requireAdmin, async (c) => {
   return c.json({ ok: true })
 })
 
+/** Membres du site, avec leurs rôles en jeu (member_roles). */
 export async function listMembers(db: D1Database) {
-  return all(db, 'SELECT id, email, display_name, avatar_url, role, created_at FROM members ORDER BY display_name COLLATE NOCASE')
+  const rows = await all<Record<string, unknown> & { role_ids: string | null }>(
+    db,
+    `SELECT m.id, m.email, m.display_name, m.avatar_url, m.role, m.created_at,
+            (SELECT group_concat(role_id) FROM member_roles r WHERE r.member_id = m.id) AS role_ids
+       FROM members m ORDER BY m.display_name COLLATE NOCASE`,
+  )
+  return rows.map((r) => ({ ...r, role_ids: r.role_ids ? r.role_ids.split(',').map(Number) : [] }))
 }

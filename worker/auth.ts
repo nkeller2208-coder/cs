@@ -151,6 +151,24 @@ auth.post('/login', async (c) => {
   return c.json({ ok: true })
 })
 
+/** Changer son mot de passe : le mot de passe actuel est exigé ; les autres appareils sont déconnectés. */
+auth.post('/password', async (c) => {
+  const me = await currentMember(c)
+  if (!me) fail(401, 'Non connecté')
+  const b = await c.req.json<{ current?: string; password?: string }>().catch(() => ({}) as { current?: string; password?: string })
+  const password = String(b.password ?? '')
+  const problem = passwordProblem(password)
+  if (problem) fail(400, problem)
+  const row = await first<{ password_hash: string | null }>(c.env.DB, 'SELECT password_hash FROM members WHERE id = ?', me.id)
+  if (!(await verifyPassword(String(b.current ?? '').slice(0, 200), row?.password_hash ?? null))) fail(403, 'Mot de passe actuel incorrect.')
+  const token = getCookie(c, SESSION_COOKIE)
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE members SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').bind(await hashPassword(password), me.id),
+    c.env.DB.prepare('DELETE FROM sessions WHERE member_id = ? AND token_hash <> ?').bind(me.id, token ? await sha256(token) : ''),
+  ])
+  return c.json({ ok: true })
+})
+
 // ------------------------------------------------------------ Lien d'inscription (usage unique)
 
 async function inviteEntry(env: Env, token: string): Promise<AllowEntry | null> {

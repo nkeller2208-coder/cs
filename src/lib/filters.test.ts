@@ -9,7 +9,7 @@ function card(p: Partial<Card>): Card {
     id: n, title: `Carte ${n}`, description: '', map_id: 1, side: 'CT', risk_id: null, status: 'published',
     review_comment: null, review_by: null, author_id: 'u1', created_at: `2026-01-${String(n).padStart(2, '0')}T00:00:00Z`,
     updated_by: null, updated_at: '', media: [], role_ids: [], category_ids: [], zone_ids: [], utility_ids: [],
-    economy_ids: [], round_type_ids: [], ...p,
+    economy_ids: [], round_type_ids: [], kind: 'strategy', role_actions: [], stuff_links: [], source_id: null, ...p,
   }
 }
 
@@ -58,5 +58,46 @@ describe('URL', () => {
     const x = f({ map: [3], side: ['CT', 'T'], role: [1, 2], q: 'smoke', sort: 'alpha', view: 'review' })
     expect(filtersFromParams(new URLSearchParams(filtersToParams(x).toString()))).toEqual(x)
     expect(filtersToParams(EMPTY_FILTERS).toString()).toBe('')
+  })
+})
+
+describe('rubriques, actions et « mes rôles »', () => {
+  const strat = card({ kind: 'strategy', role_ids: [10], role_actions: [{ role_id: 10, action_id: 3, note: '' }, { role_id: 11, action_id: 9, note: '' }] })
+  const stuff = card({ kind: 'stuff', role_ids: [11], utility_ids: [1] })
+  const list = [strat, stuff]
+  it('sépare stratégies et stuff', () => {
+    expect(applyFilters(list, f({ kind: 'strategy' }), 'u1').map((c) => c.id)).toEqual([strat.id])
+    expect(applyFilters(list, f({ kind: 'stuff' }), 'u1').map((c) => c.id)).toEqual([stuff.id])
+  })
+  it('filtre par action de rôle', () => {
+    expect(applyFilters(list, f({ act: [3] }), 'u1').map((c) => c.id)).toEqual([strat.id])
+    expect(applyFilters(list, f({ act: [4] }), 'u1')).toEqual([])
+    expect(facetCounts(list, f({}), 'u1').act.get(3)).toBe(1)
+  })
+  it('« mes rôles » : cartes qui concernent un de mes rôles', () => {
+    expect(applyFilters(list, f({ mine: true }), { userId: 'u1', myRoleIds: [10] }).map((c) => c.id)).toEqual([strat.id])
+    expect(applyFilters(list, f({ mine: true }), { userId: 'u1', myRoleIds: [12] })).toEqual([])
+  })
+  it('URL : actions et « mes rôles » aller-retour', () => {
+    const p = filtersToParams(f({ act: [3, 4], mine: true }))
+    expect(p.get('act')).toBe('3,4')
+    expect(filtersFromParams(p, 'stuff')).toMatchObject({ kind: 'stuff', act: [3, 4], mine: true })
+  })
+})
+
+describe('apprentissage', () => {
+  const todo = card({ learning: [{ team_id: 1, status: 'to_learn' }], my_rating: 2 })
+  const learned = card({ learning: [{ team_id: 1, status: 'learned' }], my_rating: null })
+  const free = card({})
+  const list = [todo, learned, free]
+  it('« À apprendre » : stratégies à apprendre dans une de mes équipes', () => {
+    expect(applyFilters(list, f({ todo: true }), 'u1').map((c) => c.id)).toEqual([todo.id])
+  })
+  it('« Pas encore notées » : cartes sans ma note', () => {
+    expect(applyFilters(list, f({ unrated: true }), 'u1').map((c) => c.id).sort()).toEqual([learned.id, free.id].sort())
+  })
+  it('URL aller-retour', () => {
+    const p = filtersToParams(f({ todo: true, unrated: true }))
+    expect(filtersFromParams(p)).toMatchObject({ todo: true, unrated: true })
   })
 })

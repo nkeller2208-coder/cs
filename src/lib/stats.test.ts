@@ -20,6 +20,8 @@ const tags: Tags = {
   utilities: [],
   economies: [],
   round_types: [],
+  role_actions: [],
+  sources: [],
   principle_themes: [], skill_groups: [],
 }
 
@@ -28,7 +30,7 @@ let n = 0
 const card = (p: Partial<Card>): Card => ({
   id: ++n, title: 't', description: '', map_id: 1, side: 'CT', risk_id: null, status: 'published', review_comment: null,
   review_by: null, author_id: 'a', created_at: '2026-09-25T10:00:00Z', updated_by: null, updated_at: '2026-09-25T10:00:00Z',
-  media: [], role_ids: [], category_ids: [1], zone_ids: [], utility_ids: [], economy_ids: [], round_type_ids: [], ...p,
+  media: [], role_ids: [], category_ids: [1], zone_ids: [], utility_ids: [], economy_ids: [], round_type_ids: [], kind: 'strategy', role_actions: [], stuff_links: [], source_id: null, ...p,
 })
 
 describe('computeStats', () => {

@@ -46,7 +46,7 @@ export function ids(v: unknown): number[] {
 export const bool = (v: unknown) => (v ? 1 : 0)
 
 /** SQLite renvoie 0/1 : on reconvertit les colonnes booléennes connues. */
-const BOOL_COLS = ['archived', 'pending', 'shows_utility', 'shows_round_type', 'pinned']
+const BOOL_COLS = ['archived', 'pending', 'shows_utility', 'shows_round_type', 'pinned', 'involved']
 export function fixBools<T extends Record<string, unknown>>(row: T): T {
   const r: Record<string, unknown> = { ...row }
   for (const k of BOOL_COLS) if (k in r) r[k] = !!r[k]
