@@ -4,7 +4,7 @@ import { EMPTY_TAGS, qk, useCards, usePrinciples, useTags } from '../hooks/data'
 import { deleteDemoCards, flagCard, linkPrincipleCard, saveCard, savePrinciple } from '../lib/api'
 import { buildDemoCards, buildDemoPrinciples, DEMO_PREFIX, isDemo } from '../lib/demo'
 import { useMember } from '../hooks/auth'
-import { errorMessage } from '../lib/supabase'
+import { errorMessage } from '../lib/http'
 import { Button, Spinner } from './ui'
 import { useToast } from './toast'
 

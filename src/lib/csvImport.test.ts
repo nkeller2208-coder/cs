@@ -17,7 +17,7 @@ const tags: Tags = {
   utilities: [{ id: 1, name: 'Smoke', sort_order: 1, archived: false }],
   economies: [{ id: 1, name: 'Eco', sort_order: 1, archived: false }],
   round_types: [],
-  principle_themes: [],
+  principle_themes: [], skill_groups: [],
 }
 
 describe('import CSV', () => {

@@ -16,7 +16,7 @@ const tags: Tags = {
     { id: 1, name: 'Stuff', shows_utility: true, shows_round_type: false, sort_order: 1, archived: false },
     { id: 2, name: 'Position', shows_utility: false, shows_round_type: false, sort_order: 2, archived: false },
   ],
-  risks: [], utilities: [{ id: 1, name: 'Smoke', sort_order: 1, archived: false }], economies: [], round_types: [], principle_themes: [],
+  risks: [], utilities: [{ id: 1, name: 'Smoke', sort_order: 1, archived: false }], economies: [], round_types: [], principle_themes: [], skill_groups: [],
 }
 
 describe('validate', () => {

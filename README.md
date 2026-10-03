@@ -1,194 +1,161 @@
 # CS2 Playbook – base de connaissances d'équipe
 
 Application web privée pour stocker, étiqueter et retrouver les contenus tactiques de l'équipe
-(vidéos YouTube, images, textes) sous forme de cartes filtrables.
+(vidéos YouTube, images, textes) sous forme de cartes filtrables, avec des principes de jeu et un suivi
+des compétences par joueur et par équipe.
 
-**Stack** : React 19 + TypeScript + Tailwind 4 (Vite) · Supabase (Postgres + Auth + RLS) · hébergement Vercel ou Netlify.
+**Stack** : React 19 + TypeScript + Tailwind 4 (Vite) · **Cloudflare Workers** (API + hébergement) · **D1** (base SQLite).
+Tout tient dans l'offre gratuite de Cloudflare : 5 Go de base, pas de mise en pause.
+
+---
+
+## Démarrer en local (5 minutes)
+
+Prérequis : [Node.js](https://nodejs.org) version LTS.
+
+```bash
+npm install
+npm run dev
+```
+
+Au premier lancement, le terminal affiche un **lien de connexion admin** :
+
+```
+═══════════════════════════════════════════════════════
+  Premier lancement : ouvre ce lien pour te connecter en admin
+  http://localhost:5173/api/auth/invite/xxxxxxxx
+═══════════════════════════════════════════════════════
+```
+
+Ouvre-le : tu es connecté en admin. Pour charger des données de test : **Admin → Démo**.
+Besoin d'un nouveau lien plus tard : `npm run admin-link`.
+
+> Sous Windows, si PowerShell bloque `npm` (« l'exécution de scripts est désactivée »), lance une fois
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, ou utilise l'Invite de commandes (`cmd`).
+
+La base locale est dans `.wrangler/state` (supprime ce dossier pour repartir de zéro).
+
+## Mettre en ligne (gratuit)
+
+1. Crée un compte sur [dash.cloudflare.com](https://dash.cloudflare.com/sign-up) (aucune carte bancaire requise).
+2. Dans le dossier du projet :
+   ```bash
+   npm run deploy
+   ```
+   Le script :
+   - ouvre le navigateur pour connecter ton compte Cloudflare (la première fois) ;
+   - crée la base D1 et note son identifiant dans `wrangler.jsonc` (la première fois) ;
+   - construit le site, applique les migrations, déploie ;
+   - affiche l'adresse du site (`https://cs2-playbook.<ton-compte>.workers.dev`) et, au premier déploiement,
+     un **lien de connexion admin**.
+3. Pense à committer `wrangler.jsonc` (il contient maintenant l'identifiant de la base).
+
+Pour mettre à jour le site plus tard : `npm run deploy` à nouveau.
+Lien admin pour le site en ligne : `npm run admin-link -- --remote https://cs2-playbook.<ton-compte>.workers.dev`.
+
+## Connexion
+
+Aucune page n'est visible sans connexion. Seules les personnes de la **liste blanche** (Admin → Membres) entrent.
+
+- **Lien de connexion personnel** (fonctionne sans rien configurer) : dans Admin → Membres, saisis un pseudo
+  puis « Inviter » : un lien est généré, à envoyer à la personne en message privé. Il est valable 7 jours, sur
+  plusieurs appareils ; en générer un nouveau remplace l'ancien. Une session dure 30 jours.
+- **Discord** (optionnel, recommandé) : chacun se connecte avec son compte Discord.
+  1. [discord.com/developers/applications](https://discord.com/developers/applications) → *New Application* → onglet **OAuth2**.
+  2. *Redirects* → ajoute `https://<ton-site>/api/auth/callback` (et `http://localhost:5173/api/auth/callback` pour le local).
+  3. Copie le *Client ID* et le *Client Secret* (*Reset Secret*).
+  4. En ligne : `npx wrangler secret put DISCORD_CLIENT_ID` puis `npx wrangler secret put DISCORD_CLIENT_SECRET`
+     (ou tableau de bord Cloudflare → ton Worker → *Settings* → *Variables and Secrets*).
+     En local : copie `.dev.vars.example` en `.dev.vars` et remplis-le.
+  5. Ajoute chaque joueur dans Admin → Membres avec son **identifiant Discord** (Paramètres Discord → Avancés →
+     Mode développeur, puis clic droit sur le profil → *Copier l'identifiant*). Une personne non autorisée qui
+     tente de se connecter voit son identifiant s'afficher, à transmettre à l'admin.
+
+Sécurité : cookie de session `HttpOnly` / `Secure` / `SameSite=Lax`, jetons stockés hachés (SHA-256), en-tête
+anti-CSRF exigé sur toute modification, droits vérifiés par l'API à chaque requête, en-têtes CSP/anti-iframe/noindex.
 
 ---
 
 ## Fonctionnalités
 
-| Cahier des charges | Où |
+| Fonctionnalité | Où |
 |---|---|
-| Accès restreint, Discord OAuth ou lien magique, liste blanche | `src/pages/LoginPage.tsx`, RPC `claim_membership` |
-| Rôles Admin / Membre, RLS sur toutes les tables | `supabase/migrations/…_init.sql` |
+| Connexion (Discord, lien personnel), liste blanche, rôles Admin / Membre | `worker/auth.ts`, `worker/admin.ts`, `src/pages/LoginPage.tsx` |
 | Grille responsive, badges colorés (CT bleu, T orange, risque vert → rouge) | `src/components/CardTile.tsx` |
-| Vue détaillée en modale, URL propre `/c/:id` partageable | `src/pages/CardDetail.tsx` |
-| Filtres ET entre familles / OU dans une famille, compteurs par option, filtres conditionnels (rôles ← side, zones ← map), recherche plein texte, tri, filtres dans l'URL | `src/lib/filters.ts`, `src/components/FilterPanel.tsx` |
-| Formulaire en clics : détection YouTube/image/lien, aperçu, titre YouTube (oEmbed), « début à mm:ss », anti-doublon, réordonnancement | `src/pages/CardFormPage.tsx`, `src/components/MediaField.tsx` |
-| « + Ajouter » (en-tête, bouton flottant mobile, touche **N**), pré-rempli depuis les filtres actifs | `src/components/Layout.tsx` |
-| « + Nouvelle zone » depuis le formulaire (marquée « à valider ») ; validation / renommage / fusion par l'admin | `ZonePicker`, `src/pages/AdminPage.tsx`, RPC `merge_zones` |
-| « Enregistrer et en créer une autre », Dupliquer, dernières valeurs mémorisées | `src/lib/cardForm.ts`, table `member_prefs` |
-| Sauvegarde auto (locale immédiate + brouillon serveur), statuts Brouillon / Publié / À revoir | `CardFormPage`, RPC `flag_card_for_review` |
-| Validation en ligne sans perte de saisie | `validate()` dans `src/lib/cardForm.ts` + contrôle serveur dans `save_card` |
-| Import CSV avec prévisualisation et modèle téléchargeable | `src/pages/ImportPage.tsx`, `src/lib/csvImport.ts` |
-| Historique des modifications | table `card_history`, diff lisible dans `src/lib/history.ts` |
-| Administration des listes (ajouter, renommer, réordonner, archiver) et des membres | `src/pages/AdminPage.tsx` |
-| **Tableau de bord** : indicateurs, activité, couverture map × rôle (trous cliquables), catégories, types de contenu, risque, contributeurs, file « À revoir » | `src/pages/DashboardPage.tsx`, `src/lib/stats.ts` |
-| **Rounds lancés** : catégorie « Round lancé » avec sous-choix Rush / Déclic / Strat / Default / Exé / Fake / Split / Contact (liste éditable), catégorie « Post-plant » | `20261002000000_rounds_principles.sql`, formulaire, filtres |
-| **Principes de jeu** : fiches de doctrine classées par thème, rattachées à des étiquettes (side, map, rôle, catégorie, type de round) et/ou à des cartes précises ; affichées sur les cartes concernées | `src/pages/PrinciplesPage.tsx`, `src/lib/principles.ts` |
-| **Cartes de démo** : 13 cartes et 4 principes de test chargées / supprimées en un clic (Admin → Démo) | `src/lib/demo.ts` |
+| Vue détaillée en modale, URL `/c/:id` partageable, carte précédente / suivante | `src/pages/CardDetail.tsx` |
+| Filtres ET entre familles / OU dans une famille, compteurs, filtres conditionnels, recherche, tri, filtres dans l'URL | `src/lib/filters.ts`, `src/components/FilterPanel.tsx` |
+| Formulaire en clics : détection YouTube/image/lien, titre YouTube, « début à mm:ss », anti-doublon | `src/pages/CardFormPage.tsx`, `src/components/MediaField.tsx` |
+| « + Ajouter » (touche **N**, bouton flottant mobile), pré-rempli depuis les filtres actifs | `src/components/Layout.tsx` |
+| Zones proposées par les membres, validation / fusion par l'admin | `worker/tags.ts`, `src/pages/AdminPage.tsx` |
+| Saisie en série, Dupliquer, dernières valeurs mémorisées | `src/lib/cardForm.ts` |
+| Sauvegarde auto, statuts Brouillon / Publié / À revoir, historique des modifications | `worker/cards.ts`, `src/lib/history.ts` |
+| Rounds lancés (Rush, Déclic, Strat…), Post-plant | catégories + liste « Types de round » |
+| **Principes de jeu** rattachés à des étiquettes et/ou à des cartes | `src/pages/PrinciplesPage.tsx`, `worker/principles.ts` |
+| **Compétences** par joueur et par équipe (voir ci-dessous) | `src/pages/SkillsPage.tsx`, `worker/skills.ts` |
+| Tableau de bord analytique | `src/pages/DashboardPage.tsx`, `src/lib/stats.ts` |
+| Import CSV avec prévisualisation | `src/pages/ImportPage.tsx`, `src/lib/csvImport.ts` |
+| Données de démo (13 cartes, 4 principes) en un clic | Admin → Démo, `src/lib/demo.ts` |
 
-Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante dans la vue détaillée · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
+Raccourcis : **N** nouvelle carte · **← / →** carte précédente / suivante · **Ctrl/⌘ + Entrée** publier · **Ctrl/⌘ + B / I** gras / italique.
 
----
+### Compétences
 
-## Mise en route
+Menu **Compétences**. Chaque compétence a trois statuts : **○ Non travaillé**, **◐ À travailler**, **● Acquis**.
 
-### 1. Projet Supabase
+- **À travailler** : la vue d'ensemble de tout ce qu'on travaille. Les objectifs d'équipe, avec la progression
+  de chaque joueur, puis les objectifs individuels de chacun.
+- **Équipe & joueurs** : tableau compétences × (équipe + chaque joueur). Passer une compétence « à travailler »
+  dans la colonne **Équipe** la passe **« à travailler » chez tous les joueurs** (après confirmation). Les joueurs
+  la passent ensuite « acquis » à leur rythme. Mettre l'équipe sur « acquis » ou « non travaillé » ne modifie pas
+  les joueurs.
+- **Fiche joueur** : les compétences d'un joueur en trois colonnes, avec sa progression.
 
-1. Crée un projet sur [supabase.com](https://supabase.com).
-2. Le plus simple : **SQL Editor → New query**, colle tout le fichier `supabase/setup_complet.sql`, puis **Run**.
-   Ce fichier regroupe toutes les migrations dans l'ordre. Sinon, applique les migrations une par une, au choix :
-   - **SQL Editor** : colle et exécute, dans l'ordre, `20260930000000_init.sql`, `20260930000100_seed_tags.sql`
-     `20261001000000_hardening.sql` puis `20261002000000_rounds_principles.sql` (dossier `supabase/migrations/`) ;
-   - **CLI** : `supabase link --project-ref <ref>` puis `supabase db push`.
-3. **Authentication → URL Configuration** : mets l'URL du site (ex. `https://playbook.vercel.app`) dans *Site URL*
-   et ajoute-la (plus `http://localhost:5173` pour le dev) dans *Redirect URLs*.
-
-### 2. Connexion Discord (recommandé)
-
-1. [Discord Developer Portal](https://discord.com/developers/applications) → *New Application* → *OAuth2*.
-2. Ajoute la *Redirect* : `https://<ref>.supabase.co/auth/v1/callback`.
-3. Supabase → **Authentication → Providers → Discord** : active-le avec le *Client ID* et le *Client Secret*.
-
-Le lien magique par email fonctionne sans configuration supplémentaire (serveur SMTP Supabase par défaut,
-limité en volume : configure ton propre SMTP pour un usage régulier). Pour n'utiliser que le lien magique,
-mets `VITE_AUTH_DISCORD=false`.
-
-### 3. Premier admin
-
-La liste blanche est vide au départ. Dans le SQL Editor :
-
-```sql
-insert into public.allowlist (email, role) values ('ton.email@exemple.com', 'admin');
--- ou avec l'identifiant Discord (Mode développeur → clic droit sur ton profil → Copier l'identifiant)
-insert into public.allowlist (discord_id, role) values ('123456789012345678', 'admin');
-```
-
-Connecte-toi : la fiche membre est créée automatiquement. Les invitations suivantes se font depuis **Admin → Membres**.
-
-### 3 bis. Cartes de test
-
-Sur une base vide, l'admin voit un bouton **« Charger les cartes de démo »** (aussi dans **Admin → Démo**).
-Il crée 13 cartes et 4 principes « [Démo] … » qui couvrent chaque cas : vidéo YouTube avec début, Short vertical,
-image directe, image cassée, lien externe, plusieurs médias, texte seul mis en forme, brouillon privé,
-carte « À revoir », rounds lancés (rush, déclic), post-plant, principes généraux ou rattachés par étiquettes.
-Un bouton les supprime tous une fois les vérifications faites.
-
-### Principes de jeu
-
-Menu **Principes** : la doctrine de l'équipe, classée par thème (liste éditable dans Admin → Thèmes).
-Un principe peut :
-- **porter des étiquettes** (side, maps, rôles, catégories, types de round) : il s'affiche alors automatiquement
-  sur toutes les cartes qui correspondent (ET entre familles, OU dans une famille, comme les filtres) ;
-- **être rattaché à des cartes précises**, depuis le principe ou depuis la vue détaillée d'une carte
-  (« + Rattacher un principe », « Créer depuis cette carte ») ;
-- rester **général** (aucune étiquette) : il n'apparaît que sur les cartes rattachées à la main.
-
-L'auteur et les admins modifient un principe ; tout membre peut rattacher ou détacher une carte.
-
-> Une personne absente de la liste blanche peut s'authentifier auprès de Supabase, mais n'a accès à rien :
-> toutes les tables sont protégées par RLS (`is_member()`), et l'application affiche « Accès non autorisé ».
-
-### 4. Lancer en local
-
-```bash
-cp .env.example .env.local   # renseigne VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY (Settings → API)
-npm install
-npm run dev                  # http://localhost:5173
-```
-
-### 5. Déployer
-
-- **Vercel** : importe le dépôt, framework *Vite*, ajoute les variables `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY`.
-  `vercel.json` gère le routage SPA.
-- **Netlify** : même principe ; `netlify.toml` contient la commande de build et la redirection SPA.
-
-Pense à ajouter l'URL de production dans les *Redirect URLs* Supabase.
-
-Les deux configurations envoient des en-têtes de sécurité (CSP, `X-Frame-Options`, `nosniff`, `noindex`).
-La CSP autorise `*.supabase.co` : si tu utilises un domaine Supabase personnalisé, ajoute-le à `connect-src`.
+Droits : l'admin fixe le statut d'équipe et peut tout modifier ; chaque joueur modifie ses propres statuts.
+La liste des compétences et leurs groupes se gèrent dans **Admin → Compétences** (ou « + Compétence »).
+Le modèle prévoit plusieurs équipes (table `teams`) ; une seule est utilisée pour l'instant.
 
 ---
 
-## Modèle de données
+## Architecture
 
 ```
-maps ─┬─< zones                       roles (side CT/T)   categories (shows_utility)
-      │                               risks (color)       utilities     economies
-cards ┼─< card_media (url, kind, url_key, position)
-      ├─< card_roles >─ roles          ├─< card_zones >─ zones
-      ├─< card_categories >─ categories├─< card_utilities >─ utilities
-      ├─< card_economies >─ economies  └─< card_history (instantané JSON par modification)
-      └─< card_round_types >─ round_types     (si catégorie « Round lancé » : categories.shows_round_type)
-members (role admin|member) ─ member_prefs (dernières valeurs)      allowlist (email | discord_id)
-
-principle_themes ─< principles (title, summary, body, sides[], pinned)
-principles ─< principle_maps / principle_roles / principle_categories / principle_round_types
-principles ─< principle_cards >─ cards   (rattachements explicites)
+navigateur ──► Cloudflare Worker (worker/)
+                 ├─ /api/*   API Hono : connexion, droits, cartes, principes, compétences…
+                 ├─ le reste : site React (dist/client) servi en fichiers statiques
+                 └─ D1 (SQLite) : migrations/*.sql
 ```
 
-- Les listes d'étiquettes ont `sort_order` et `archived` : une valeur archivée reste sur les cartes mais n'est plus proposée.
-- `cards.status` : `draft` (visible par l'auteur seul, via RLS), `published`, `review` (+ `review_comment`).
-- Une carte publiée doit avoir titre, map et side (contrainte SQL) ; `save_card` vérifie aussi catégorie et média/description.
-- Aucun média n'est hébergé : seules les URLs sont stockées. `url_key` (ex. `yt:<id>`) sert à l'anti-doublon.
+La base n'est jamais exposée au navigateur : toute lecture et écriture passe par l'API, qui vérifie la session
+et les droits (auteur ou admin pour modifier, brouillons privés, cohérence zones ↔ map et rôles ↔ side, limites
+de taille…). En local, le plugin Cloudflare pour Vite exécute le même Worker et une copie locale de D1.
 
-### Fonctions (RPC)
+### Modèle de données (`migrations/`)
 
-| Fonction | Rôle |
-|---|---|
-| `claim_membership()` | À la connexion : crée la fiche membre si l'email ou l'id Discord est sur la liste blanche |
-| `save_card(p jsonb)` | Seule voie d'écriture des cartes : création / mise à jour atomique avec toutes les étiquettes, contrôle des droits, cohérence (zones de la map, rôles du side), limites de taille, historique et dernières valeurs |
-| `flag_card_for_review(id, comment)` / `resolve_card_review(id)` | Statut « À revoir » (tout membre peut signaler) |
-| `merge_zones(source, target)` | Fusion de zones (admin), met à jour toutes les cartes |
-| `reorder_tags(table, ids)` | Réordonnancement (admin) |
-| `save_principle(p jsonb)` | Création / mise à jour atomique d'un principe et de ses étiquettes (auteur ou admin) |
-| `remove_member(id)` | Retire un membre et son entrée de liste blanche (ses cartes sont conservées) |
+```
+allowlist ─ members (role, team_id) ─ sessions          teams
+maps ─< zones   roles (CT/T)   categories   risks   utilities   economies   round_types
+cards ─< card_media · card_roles · card_categories · card_zones · card_utilities · card_economies
+      ─< card_round_types · card_history
+principle_themes ─< principles ─< principle_maps · principle_roles · principle_categories
+                                ─< principle_round_types · principle_cards >─ cards
+skill_groups ─< skills ─< team_skills (statut d'équipe) · member_skills (statut par joueur)
+```
 
-Les clients n'ont aucun droit d'écriture direct sur `cards` (hors suppression) ni sur les tables de liaison
-et l'historique : tout passe par ces fonctions.
-
----
-
-## Choix techniques
-
-- **Filtrage côté client.** Toutes les cartes visibles sont chargées une fois (quelques milliers de lignes au plus
-  pour une équipe), ce qui rend les filtres, compteurs et recherche instantanés et simplifie le calcul des compteurs
-  par option. Si la base dépasse ~10 000 cartes, déplacer le filtrage dans une vue/RPC Postgres.
-- **Texte riche = Markdown restreint** (gras, italique, listes, liens) rendu par un petit moteur maison qui échappe
-  tout le HTML (`src/lib/markdown.ts`) : pas de dépendance d'éditeur lourde, pas de XSS.
-- **Sauvegarde auto** en deux temps : `localStorage` à chaque frappe (aucune perte si l'onglet se ferme),
-  puis brouillon serveur après 2,5 s d'inactivité pour une nouvelle carte (visible dans « Mes brouillons »).
-  Une carte déjà publiée n'est jamais modifiée silencieusement : ses changements restent locaux jusqu'à l'enregistrement.
-- **Titre YouTube** via oEmbed (`youtube.com/oembed`, puis `noembed.com` en secours pour le CORS).
+Ajouter une migration : crée `migrations/0004_xxx.sql`, puis `npm run dev` (local) ou `npm run deploy` (en ligne)
+l'appliquent automatiquement.
 
 ---
 
 ## Tests
 
 ```bash
-npm test          # tests unitaires (Vitest) : détection des médias, filtres, Markdown, formulaire, import CSV
+npm test          # tests unitaires (logique : médias, filtres, Markdown/XSS, formulaire, CSV, stats, principes, compétences)
 npm run typecheck
+npm run e2e       # base jetable + serveur local : 58 tests de droits de l'API puis scénario navigateur complet
 ```
 
-**Politiques RLS et RPC** (Postgres local, sans Supabase) :
-
-```bash
-PGHOST=/var/run/postgresql PGUSER=postgres ./supabase/tests/run.sh
-```
-
-**Bout en bout** (Postgres local + [PostgREST](https://github.com/PostgREST/postgrest/releases) + Vite + Playwright) :
-connexion, refus d'un intrus, formulaire complet, saisie en série, filtres/URL, détail, signalement, duplication,
-fusion de zones, import CSV, restauration après rechargement, vues mobiles.
-
-```bash
-PGHOST=/var/run/postgresql PGUSER=postgres npm run e2e   # captures dans e2e/screenshots
-```
-
----
+`npm run e2e` utilise Playwright (`CHROMIUM_PATH` pour choisir le navigateur, `SHOTS` pour le dossier des captures).
 
 ## Hors périmètre V1
 
-Carte interactive de la map, favoris / playlists, commentaires, export PDF.
+Carte interactive de la map, favoris / playlists, commentaires, export PDF, plusieurs équipes dans l'interface.

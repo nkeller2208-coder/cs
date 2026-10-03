@@ -11,6 +11,7 @@ import { DeniedPage, LoginPage } from './pages/LoginPage'
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ImportPage = lazy(() => import('./pages/ImportPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const SkillsPage = lazy(() => import('./pages/SkillsPage'))
 const PrinciplesPage = lazy(() => import('./pages/PrinciplesPage'))
 const PrincipleDetailPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleDetailPage })))
 const PrincipleFormPage = lazy(() => import('./pages/PrinciplesPage').then((m) => ({ default: m.PrincipleFormPage })))
@@ -20,7 +21,6 @@ export function App() {
   if (auth.status === 'loading') return <FullPageSpinner />
   // Aucune page n'est visible sans connexion.
   if (auth.status === 'anonymous') return <LoginPage />
-  if (auth.status === 'denied') return <DeniedPage email={auth.session.user.email} />
   if (auth.status === 'error') return <DeniedPage message={auth.message} />
   return <MemberApp isAdmin={auth.member.role === 'admin'} />
 }
@@ -39,6 +39,7 @@ function MemberApp({ isAdmin }: { isAdmin: boolean }) {
           <Route path="new" element={<CardFormPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="stats" element={<DashboardPage />} />
+          <Route path="competences" element={<SkillsPage />} />
           <Route path="principes" element={<PrinciplesPage />} />
           <Route path="principes/new" element={<PrincipleFormPage />} />
           <Route path="principes/:id" element={<PrincipleDetailPage />} />

@@ -4,16 +4,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { EMPTY_TAGS, qk, useCards, useTags } from '../hooks/data'
 import { useMember } from '../hooks/auth'
 import {
-  addAllowlist, deleteAllowlist, deleteTag, fetchAllowlist, insertTag, mergeZones, removeMember, reorderTags,
+  addAllowlist, createInvite, deleteAllowlist, fetchSkills, revokeInvite, deleteTag, fetchAllowlist, insertTag, mergeZones, removeMember, reorderTags,
   updateAllowlist, updateMember, updateTag,
 } from '../lib/api'
-import { errorMessage } from '../lib/supabase'
+import { errorMessage } from '../lib/http'
 import { formatDay, normalize } from '../lib/text'
-import type { Card, Member, MemberRole, Side, Tag, TagTable, Tags, Zone } from '../lib/types'
+import type { Card, Member, MemberRole, Side, Skill, Tag, TagTable, Tags, Zone } from '../lib/types'
 import { useMembers } from '../hooks/data'
-import { Badge, Button, cx, inputClass, Spinner } from '../components/ui'
+import { Badge, Button, Modal, cx, inputClass, Spinner } from '../components/ui'
 import { useToast } from '../components/toast'
 import { DemoPanel } from '../components/DemoPanel'
+import { SkillEditor, skillsKey } from './SkillsPage'
+import { groupSkills } from '../lib/skills'
 
 const TABS: [string, string][] = [
   ['membres', 'Membres'],
@@ -26,6 +28,7 @@ const TABS: [string, string][] = [
   ['economie', 'Économie'],
   ['rounds', 'Rounds'],
   ['themes', 'Thèmes (principes)'],
+  ['competences', 'Compétences'],
   ['demo', 'Démo'],
 ]
 
@@ -69,6 +72,7 @@ export default function AdminPage() {
           <Route path="economie" element={<TagEditor table="economies" title="Économie du round" />} />
           <Route path="rounds" element={<TagEditor table="round_types" title="Types de round" hint="Proposés quand la catégorie « Round lancé » est cochée (rush, déclic, strat…)." />} />
           <Route path="themes" element={<TagEditor table="principle_themes" title="Thèmes des principes de jeu" hint="Regroupent les principes dans la page « Principes »." />} />
+          <Route path="competences" element={<SkillsAdmin />} />
           <Route path="demo" element={<Section title="Données de démo"><DemoPanel /></Section>} />
         </Routes>
       )}
@@ -441,14 +445,26 @@ function MembersAdmin() {
   }
   const onError = (e: unknown) => toast(errorMessage(e), 'error')
 
+  const [link, setLink] = useState<{ url: string; expires_at: string; who: string } | null>(null)
+  const makeLink = useMutation({
+    mutationFn: async ({ id, who }: { id: number; who: string }) => ({ ...(await createInvite(id)), who }),
+    onSuccess: (l) => {
+      setLink(l)
+      refresh()
+    },
+    onError,
+  })
+  const dropLink = useMutation({ mutationFn: (id: number) => revokeInvite(id), onSuccess: refresh, onError })
   const invite = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const v = ident.trim()
       const isDiscord = /^\d{15,21}$/.test(v)
-      return addAllowlist({ email: isDiscord ? null : v, discord_id: isDiscord ? v : null, role, note })
+      const { id } = await addAllowlist({ email: isDiscord || !v ? null : v, discord_id: isDiscord ? v : null, role, note })
+      // Lien de connexion généré tout de suite : à envoyer à la personne (Discord, SMS…).
+      return { ...(await createInvite(id)), who: note.trim() || v }
     },
-    onSuccess: () => {
-      toast('Invitation ajoutée : la personne peut se connecter')
+    onSuccess: (l) => {
+      setLink(l)
       setIdent('')
       setNote('')
       refresh()
@@ -475,12 +491,15 @@ function MembersAdmin() {
     onError,
   })
 
-  const memberEmails = new Set((members.data ?? []).map((m) => m.email))
-  const validIdent = /^\d{15,21}$/.test(ident.trim()) || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ident.trim())
+  const v = ident.trim()
+  const validIdent = /^\d{15,21}$/.test(v) || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) || (!v && !!note.trim())
 
   return (
     <div className="space-y-10">
-      <Section title="Inviter" hint="Email (lien magique ou email du compte Discord) ou identifiant Discord numérique (Paramètres Discord › Avancés › Mode développeur › Copier l'identifiant).">
+      <Section
+        title="Inviter"
+        hint="Identifiant Discord (Paramètres › Avancés › Mode développeur, puis clic droit sur le profil › Copier l'identifiant) ou email du compte Discord. Ou juste un pseudo : un lien de connexion personnel est généré, à lui envoyer."
+      >
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -488,8 +507,8 @@ function MembersAdmin() {
           }}
           className="flex flex-wrap gap-2"
         >
-          <input value={ident} onChange={(e) => setIdent(e.target.value)} placeholder="email@exemple.com ou 123456789012345678" className={cx(inputClass, 'min-w-60 flex-1')} />
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pseudo (note)" className={cx(inputClass, 'w-40!')} />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Pseudo" className={cx(inputClass, 'w-40!')} aria-label="Pseudo" />
+          <input value={ident} onChange={(e) => setIdent(e.target.value)} placeholder="ID Discord ou email (optionnel)" className={cx(inputClass, 'min-w-60 flex-1')} aria-label="ID Discord ou email" />
           <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className={cx(inputClass, 'w-auto!')}>
             <option value="member">Membre</option>
             <option value="admin">Admin</option>
@@ -541,19 +560,32 @@ function MembersAdmin() {
         </ul>
       </Section>
 
-      <Section title="Liste blanche" hint="Les comptes autorisés à se connecter. Une invitation devient un membre à la première connexion.">
+      <Section title="Liste blanche" hint="Les personnes autorisées à se connecter. Une invitation devient un membre à la première connexion. Un lien de connexion est valable 7 jours ; en générer un nouveau remplace l'ancien.">
         <ul className="divide-y divide-slate-800 rounded-xl ring-1 ring-slate-800">
           {(allow.data ?? []).map((a) => (
             <li key={a.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm">
               <span className="min-w-0 flex-1 truncate">
-                {a.email ?? <span>Discord {a.discord_id}</span>}
-                {a.note && <span className="text-slate-500"> · {a.note}</span>}
+                <span className="font-medium text-slate-100">{a.member_name || a.note || a.email || `Discord ${a.discord_id}`}</span>
+                <span className="text-slate-500">
+                  {[a.discord_id && `Discord ${a.discord_id}`, a.email].filter(Boolean).map((x) => ` · ${x}`)}
+                </span>
               </span>
-              {a.email && memberEmails.has(a.email) ? (
+              {a.member_id ? (
                 <Badge className="bg-emerald-500/15 text-emerald-200 ring-emerald-500/30">connecté</Badge>
               ) : (
                 <Badge>en attente</Badge>
               )}
+              {a.invite_expires_at && new Date(a.invite_expires_at) > new Date() ? (
+                <span className="flex items-center gap-1 text-xs text-sky-300" title={`Lien valable jusqu'au ${formatDay(a.invite_expires_at)}`}>
+                  🔗 lien actif
+                  <button type="button" onClick={() => dropLink.mutate(a.id)} className="text-slate-500 hover:text-red-300" aria-label="Désactiver le lien">
+                    ✕
+                  </button>
+                </span>
+              ) : null}
+              <Button size="sm" onClick={() => makeLink.mutate({ id: a.id, who: a.member_name || a.note || a.email || '' })}>
+                🔗 Lien de connexion
+              </Button>
               <select
                 value={a.role}
                 onChange={(e) => setInviteRole.mutate({ id: a.id, role: e.target.value as MemberRole })}
@@ -570,6 +602,119 @@ function MembersAdmin() {
           {allow.data?.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">Aucune invitation.</li>}
         </ul>
       </Section>
+
+      <Modal open={!!link} onClose={() => setLink(null)} title={`Lien de connexion${link?.who ? ` · ${link.who}` : ''}`}>
+        {link && (
+          <div className="space-y-3 p-5">
+            <p className="text-sm text-slate-300">
+              Envoie ce lien à la personne (message privé Discord, SMS…). En l'ouvrant, elle est connectée directement. Valable
+              jusqu'au <strong>{formatDay(link.expires_at)}</strong>, sur plusieurs appareils.
+            </p>
+            <input readOnly value={link.url} onFocus={(e) => e.target.select()} className={cx(inputClass, 'font-mono text-xs')} aria-label="Lien de connexion" />
+            <p className="text-xs text-amber-300">⚠ Ce lien vaut mot de passe : ne le partage pas publiquement.</p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(link.url)
+                    toast('Lien copié', 'info')
+                  } catch {
+                    toast('Copie impossible : sélectionne le lien à la main', 'error')
+                  }
+                }}
+              >
+                Copier le lien
+              </Button>
+              <Button onClick={() => setLink(null)}>Fermer</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- compétences
+
+function SkillsAdmin() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const q = useQuery({ queryKey: skillsKey, queryFn: fetchSkills })
+  const [editing, setEditing] = useState<Skill | null>(null)
+  const [creating, setCreating] = useState(false)
+  const done = () => qc.invalidateQueries({ queryKey: skillsKey })
+  const onError = (e: unknown) => toast(errorMessage(e), 'error')
+  const update = useMutation({ mutationFn: ({ id, values }: { id: number; values: Record<string, unknown> }) => updateTag('skills', id, values), onSuccess: done, onError })
+  const remove = useMutation({ mutationFn: (id: number) => deleteTag('skills', id), onSuccess: done, onError })
+  const reorder = useMutation({ mutationFn: (ids: number[]) => reorderTags('skills', ids), onSuccess: done, onError })
+  if (!q.data) return <Spinner />
+  const data = q.data
+  const groups = groupSkills(data, data.skills)
+
+  return (
+    <div className="space-y-10">
+      <Section
+        title="Compétences"
+        hint="Le statut de chaque joueur et de l'équipe se règle dans la page Compétences. Archiver masque une compétence sans perdre les statuts."
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            + Compétence
+          </Button>
+        }
+      >
+        {groups.map((g) => (
+          <div key={g.id ?? 'none'} className="space-y-1">
+            <h3 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">{g.name}</h3>
+            <ul className="divide-y divide-slate-800 rounded-xl ring-1 ring-slate-800">
+              {g.skills.map((sk, i) => (
+                <li key={sk.id} className={cx('flex flex-wrap items-center gap-2 px-3 py-2', sk.archived && 'opacity-60')}>
+                  <span className="flex flex-col">
+                    {(['▲', '▼'] as const).map((arrow, d) => (
+                      <button
+                        key={arrow}
+                        type="button"
+                        disabled={d === 0 ? i === 0 : i === g.skills.length - 1}
+                        onClick={() => {
+                          const list = g.skills.map((x) => x.id)
+                          const j = d === 0 ? i - 1 : i + 1
+                          ;[list[i], list[j]] = [list[j], list[i]]
+                          reorder.mutate(list)
+                        }}
+                        className="px-1 text-xs text-slate-500 hover:text-white disabled:opacity-20"
+                        aria-label={d === 0 ? 'Monter' : 'Descendre'}
+                      >
+                        {arrow}
+                      </button>
+                    ))}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{sk.name}</p>
+                    {sk.description && <p className="truncate text-xs text-slate-500">{sk.description}</p>}
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(sk)}>
+                    Modifier
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: sk.id, values: { archived: !sk.archived } })}>
+                    {sk.archived ? 'Désarchiver' : 'Archiver'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-400 hover:text-red-300"
+                    onClick={() => window.confirm(`Supprimer « ${sk.name} » et tous ses statuts ?`) && remove.mutate(sk.id)}
+                  >
+                    Supprimer
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </Section>
+      <TagEditor table="skill_groups" title="Groupes de compétences" hint="Regroupent les compétences dans les tableaux." />
+      {creating && <SkillEditor open onClose={() => setCreating(false)} data={data} />}
+      {editing && <SkillEditor key={editing.id} open onClose={() => setEditing(null)} data={data} skill={editing} />}
     </div>
   )
 }

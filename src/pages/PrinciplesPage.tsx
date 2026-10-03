@@ -5,7 +5,7 @@ import { EMPTY_TAGS, qk, useCards, useMemberIndex, usePrinciples, useTagIndex, u
 import { useMember } from '../hooks/auth'
 import { deletePrinciple, linkPrincipleCard, savePrinciple, unlinkPrincipleCard, type PrinciplePayload } from '../lib/api'
 import { cardsForPrinciple, isGeneral, principleFilterHref, principleMatchesCard, searchPrinciple } from '../lib/principles'
-import { errorMessage } from '../lib/supabase'
+import { errorMessage } from '../lib/http'
 import { byOrder, formatDate } from '../lib/text'
 import type { Principle, Side } from '../lib/types'
 import { CardTile } from '../components/CardTile'

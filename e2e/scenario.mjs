@@ -1,28 +1,24 @@
 // Scénario de bout en bout : login, formulaire, filtres, détail, admin, import, mobile.
-// Lancé par e2e/run.sh (base neuve à chaque exécution).
+// Lancé par e2e/run.mjs (base neuve à chaque exécution, connexion de test activée).
 import { mkdirSync } from 'node:fs'
 import { chromium } from 'playwright'
-import { sign } from './jwt.mjs'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173'
 const SHOTS = process.env.SHOTS ?? 'e2e/screenshots'
 mkdirSync(SHOTS, { recursive: true })
 const users = {
-  admin: { id: '11111111-1111-1111-1111-111111111111', email: 'admin@team.gg' },
-  member: { id: '22222222-2222-2222-2222-222222222222', email: 'membre@team.gg' },
-  intrus: { id: '33333333-3333-3333-3333-333333333333', email: 'intrus@x.gg' },
-}
-function session(u) {
-  const exp = Math.floor(Date.now() / 1000) + 3600 * 24
-  const access_token = sign({ sub: u.id, role: 'authenticated', email: u.email, aud: 'authenticated', exp })
-  return { access_token, refresh_token: 'x', expires_at: exp, expires_in: 86400, token_type: 'bearer',
-    user: { id: u.id, email: u.email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01' } }
+  admin: { email: 'admin@team.gg' },
+  member: { email: 'membre@team.gg' },
 }
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
 const errors = []
 async function ctxFor(user, viewport = { width: 1440, height: 900 }) {
   const ctx = await browser.newContext({ viewport })
-  if (user) await ctx.addInitScript((s) => { if (location.port === '5173') localStorage.setItem('sb-localhost-auth-token', JSON.stringify(s)) }, session(user))
+  // Connexion par l'API de test : le cookie de session est partagé avec la page.
+  if (user) {
+    const r = await ctx.request.post(BASE + '/api/auth/dev', { data: { email: user.email }, headers: { 'x-requested-with': 'cs2kb' } })
+    if (!r.ok()) throw new Error('connexion de test impossible : ' + (await r.text()))
+  }
   const page = await ctx.newPage()
   current = page
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
@@ -37,13 +33,13 @@ process.on('uncaughtException', async (e) => { console.log('FAIL', e.message.spl
 // 1. anonyme
 let page = await ctxFor(null)
 await page.goto(BASE + '/c/1')
-await page.getByText('Continuer avec Discord').waitFor()
+await page.getByText('lien de connexion personnel').waitFor()
 await shot(page, '01-login'); step('login affiché sans session')
 
-// 2. intrus
-page = await ctxFor(users.intrus)
-await page.goto(BASE)
-await page.getByText('Accès non autorisé').waitFor(); step('intrus refusé')
+// 2. intrus (connexion de test avec un email inconnu)
+await page.getByLabel('Email (développement)').fill('intrus@x.gg')
+await page.getByRole('button', { name: 'Connexion de test' }).click()
+await page.getByText("n'est pas sur la liste des membres").waitFor(); step('intrus refusé')
 
 // 3. admin : formulaire
 page = await ctxFor(users.admin)
@@ -253,6 +249,43 @@ page.once('dialog', (d) => d.accept())
 await page.goto(BASE + '/admin/demo')
 await page.getByRole('button', { name: /Supprimer les données de démo/ }).click()
 await page.getByText('Données de démo supprimées').waitFor(); step('suppression des données de démo')
+
+// 11. compétences : statut d'équipe propagé, fiche joueur
+page = await ctxFor(users.admin)
+await page.goto(BASE + '/competences?vue=matrice')
+await page.getByRole('button', { name: /^Crosshair placement \(équipe\) : Non travaillé/ }).click()
+page.once('dialog', (d) => d.accept())
+await page.getByRole('menuitemradio', { name: 'À travailler' }).click()
+await page.getByText(/passé « à travailler » chez 2 joueurs/).waitFor(); step('compétence d’équipe « à travailler » propagée aux joueurs')
+await shot(page, '18-skills-matrix')
+await page.getByRole('tab', { name: 'À travailler' }).click()
+await page.getByText("Objectifs de l'équipe").waitFor()
+await page.locator('article', { hasText: 'Crosshair placement' }).getByText('2 à travailler').waitFor()
+await shot(page, '19-skills-towork')
+page = await ctxFor(users.member)
+await page.goto(BASE + '/competences?vue=joueur')
+const col = page.locator('section', { hasText: 'À travailler' }).first()
+await col.getByText('Crosshair placement').waitFor()
+await col.getByText('objectif d’équipe').first().waitFor()
+await col.getByRole('button', { name: /Crosshair placement · Apex : À travailler/ }).click()
+await page.getByRole('menuitemradio', { name: 'Acquis' }).click()
+await page.locator('section', { hasText: 'Acquis' }).last().getByText('Crosshair placement').waitFor()
+await page.reload()
+await page.locator('section', { hasText: 'Acquis' }).last().getByText('Crosshair placement').waitFor()
+step('fiche joueur : le joueur passe sa compétence « acquis »')
+await shot(page, '20-skills-player')
+if (await page.getByRole('button', { name: /\(équipe\)/ }).count()) throw new Error('membre : statut d’équipe modifiable')
+
+// 12. lien de connexion personnel (sans Discord)
+page = await ctxFor(users.admin)
+await page.goto(BASE + '/admin/membres')
+await page.getByLabel('Pseudo').fill('Coach')
+await page.getByRole('button', { name: 'Inviter' }).click()
+const invite = await page.getByLabel('Lien de connexion').inputValue()
+await shot(page, '21-invite-link')
+page = await ctxFor(null)
+await page.goto(invite)
+await page.getByRole('link', { name: 'Compétences' }).waitFor(); step('lien de connexion personnel : connecté sans Discord')
 
 await browser.close()
 if (errors.length) { console.log('ERREURS NAVIGATEUR:\n' + errors.join('\n')); process.exit(1) }

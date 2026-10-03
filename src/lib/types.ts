@@ -36,6 +36,7 @@ export interface Tags {
   economies: Tag[]
   round_types: Tag[]
   principle_themes: Tag[]
+  skill_groups: Tag[]
 }
 
 export type TagTable = keyof Tags
@@ -100,6 +101,16 @@ export interface Member {
   created_at: string
 }
 
+/** Utilisateur connecté. */
+export interface Me {
+  id: string
+  role: MemberRole
+  email: string | null
+  display_name: string
+  avatar_url: string | null
+  created_at: string
+}
+
 export interface AllowlistEntry {
   id: number
   email: string | null
@@ -107,6 +118,36 @@ export interface AllowlistEntry {
   role: MemberRole
   note: string | null
   created_at: string
+  /** Fin de validité du lien de connexion personnel (null : aucun lien actif). */
+  invite_expires_at: string | null
+  member_id: string | null
+  member_name: string | null
+}
+
+// ------------------------------------------------------------ Compétences
+
+export type SkillStatus = 'not_worked' | 'to_work' | 'acquired'
+
+export interface Skill extends Tag {
+  group_id: number | null
+  description: string
+  created_by: string | null
+}
+
+export interface SkillState {
+  skill_id: number
+  status: SkillStatus
+  updated_by: string | null
+  updated_at: string
+}
+
+export interface SkillsData {
+  team: { id: number; name: string }
+  groups: Tag[]
+  skills: Skill[]
+  teamStatus: SkillState[]
+  memberStatus: (SkillState & { member_id: string })[]
+  players: Pick<Member, 'id' | 'display_name' | 'email' | 'avatar_url' | 'role'>[]
 }
 
 export interface LastValues {

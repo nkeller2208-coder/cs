@@ -42,15 +42,17 @@ export function Layout() {
             <NavLink to="/principes" className={nav}>
               Principes
             </NavLink>
-            <NavLink to="/stats" className={nav}>
-              <span className="sm:hidden">Stats</span>
-              <span className="hidden sm:inline">Tableau de bord</span>
+            <NavLink to="/competences" className={nav}>
+              Compétences
             </NavLink>
-            <NavLink to="/import" className={({ isActive }) => cx(nav({ isActive }), 'max-sm:hidden')}>
+            <NavLink to="/stats" className={({ isActive }) => cx(nav({ isActive }), 'max-md:hidden')}>
+              Tableau de bord
+            </NavLink>
+            <NavLink to="/import" className={({ isActive }) => cx(nav({ isActive }), 'max-lg:hidden')}>
               Import
             </NavLink>
             {me.role === 'admin' && (
-              <NavLink to="/admin" className={nav}>
+              <NavLink to="/admin" className={({ isActive }) => cx(nav({ isActive }), 'max-md:hidden')}>
                 Admin
               </NavLink>
             )}
@@ -89,6 +91,15 @@ export function Layout() {
                   <p className="truncate px-2 pb-2 text-xs text-slate-500">
                     {me.role === 'admin' ? 'Admin' : 'Membre'} · {me.email}
                   </p>
+                  {/* Liens repliés ici sur petit écran */}
+                  <Link to="/stats" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800 md:hidden">
+                    Tableau de bord
+                  </Link>
+                  {me.role === 'admin' && (
+                    <Link to="/admin" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800 md:hidden">
+                      Admin
+                    </Link>
+                  )}
                   <Link to="/import" onClick={() => setMenu(false)} className="block rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800">
                     Import CSV
                   </Link>

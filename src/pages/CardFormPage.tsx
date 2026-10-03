@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { canEditCard, EMPTY_TAGS, qk, useCards, useLastValues, useTagIndex, useTags } from '../hooks/data'
 import { useMember } from '../hooks/auth'
 import { deleteCard, proposeZone, saveCard } from '../lib/api'
-import { errorMessage } from '../lib/supabase'
+import { errorMessage } from '../lib/http'
 import {
   applyLastValues, clearLocal, formFromCard, formFromDuplicate, formFromParams, hasContent, loadLocal,
   localKey, nextInSeries, reconcile, saveLocal, showsRoundType, showsUtility, signature, TITLE_MAX, toPayload, validate,

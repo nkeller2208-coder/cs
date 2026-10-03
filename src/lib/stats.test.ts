@@ -20,7 +20,7 @@ const tags: Tags = {
   utilities: [],
   economies: [],
   round_types: [],
-  principle_themes: [],
+  principle_themes: [], skill_groups: [],
 }
 
 const now = new Date('2026-09-30T12:00:00Z')

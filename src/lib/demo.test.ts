@@ -12,7 +12,7 @@ const tags: Tags = {
   utilities: [t(1, 'Smoke')],
   economies: [t(1, 'Full buy')],
   round_types: [t(1, 'Rush')],
-  principle_themes: [],
+  principle_themes: [], skill_groups: [],
 }
 
 describe('cartes de démo', () => {

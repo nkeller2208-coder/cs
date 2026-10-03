@@ -14,7 +14,7 @@ export const qk = {
 }
 
 export const EMPTY_TAGS: Tags = {
-  maps: [], zones: [], roles: [], categories: [], risks: [], utilities: [], economies: [], round_types: [], principle_themes: [],
+  maps: [], zones: [], roles: [], categories: [], risks: [], utilities: [], economies: [], round_types: [], principle_themes: [], skill_groups: [],
 }
 
 export function useTags() {
@@ -53,6 +53,7 @@ export function useTagIndex(tags: Tags | undefined) {
       economies: index(t.economies),
       round_types: index(t.round_types),
       principle_themes: index(t.principle_themes),
+      skill_groups: index(t.skill_groups),
     }
   }, [tags])
 }
